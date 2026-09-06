@@ -71,14 +71,17 @@
 ## 前端结构（frontend/src/）
 
 ```
-App.jsx             布局 + 视图状态 + 会话当前选中
-api.js              封装 + 时间格式化
+App.jsx             布局 + 视图状态 + 会话当前选中 + 全局消息过滤状态
+api.js              封装 + 时间格式化 + 热力图网格
 components/
   Sidebar.jsx       会话列表 + 全局统计
-  OverviewView.jsx  概览：统计、标签云、触发 AI 分析
-  TimelineView.jsx  消息时间线 + 详情右栏（含标签编辑、原始JSON）
-  MsgCard.jsx       单条消息卡片
-  TopicView.jsx     专题卡片瀑布流，展开显示关联原文
+  DashView.jsx      概览：热力图、标签云、类型计数、最近消息（均可点击跳转）
+  HomeView.jsx      未选会话时的欢迎页 / 会话总览
+  MessageList.jsx   消息流：类型/标签/日期/关键词过滤 + 无限滚动 + 按天分组
+  MsgContent.jsx    单条消息渲染（文本/链接/图片缩略/文件卡片）
+  TimelineView.jsx  消息时间线容器 + 详情右栏（标签编辑、原始JSON）
+  TopicView.jsx     专题卡片网格 + 屏幕居中可折叠浮窗（含关联原文）
+  GalleryView.jsx   图片/资源图库
   ConfigPanel.jsx   LLM 配置 + 数据导入
 ```
 
