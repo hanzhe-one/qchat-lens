@@ -14,8 +14,7 @@ export default function ConfigPanel({ onClose }) {
     get('/api/qce/friends').then((d) => {
       if (d.friends && d.friends.length) {
         setFriends(d.friends)
-        const own = d.friends.find((f) => f.uin && f.uin.endsWith('653633501'))
-        setTargetUid((own || d.friends[0]).uid)
+        setTargetUid(d.friends[0].uid)
       }
     }).catch(() => {})
   }, [])
