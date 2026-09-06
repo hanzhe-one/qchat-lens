@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-# QChat Lens 打包配置（onedir，双击 run.exe / QChatLens.exe）
+# QChat Lens 打包配置（onedir，双击 QChatLens.exe）
+# desktop.py 静态 import app.main，PyInstaller 才能把 app 包收集进去。
 
 import sys
 from pathlib import Path
@@ -12,31 +13,47 @@ datas = [
     (str(FRONTEND), "frontend_dist"),
 ]
 
-hiddenimports = [
+# 让 PyInstaller 静态发现 app 包（collect submodules 递归）
+import PyInstaller.utils.hooks as hooks
+app_pkgs = []
+for pkg in hooks.collect_submodules("app"):
+    pass  # collect_submodules 只返回名字；改用 collect_all
+collect_all_app = hooks.collect_all("app")
+binaries = collect_all_app[1]
+datas += collect_all_app[2]
+hiddenimports = collect_all_app[0]
+
+hiddenimports += [
+    "uvicorn",
     "uvicorn.logging",
     "uvicorn.loops",
     "uvicorn.loops.auto",
-    "uvicorn.protocols",
-    "uvicorn.protocols.http",
     "uvicorn.protocols.http.auto",
-    "uvicorn.protocols.websockets",
     "uvicorn.protocols.websockets.auto",
-    "uvicorn.lifespan",
     "uvicorn.lifespan.on",
     "websocket",
-    "importlib.metadata",
+    "webview",
+    "clr_loader",
+    "pythonnet",
 ]
+
+# pythonnet 原生 dll（打包 webview EdgeChromium 后端必需）
+try:
+    clr_bins = hooks.collect_dynamic_libs("pythonnet")
+    binaries += clr_bins
+except Exception:
+    pass
 
 a = Analysis(
     [str(BACKEND / "desktop.py")],
     pathex=[str(BACKEND)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "numpy", "pandas", "PIL", "cv2"],
+    excludes=["tkinter", "matplotlib"],
     noarchive=False,
 )
 

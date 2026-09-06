@@ -3,36 +3,46 @@ import { get, post } from '../api'
 import MessageList from './MessageList'
 import MsgContent from './MsgContent'
 
-export default function TimelineView({ session }) {
+export default function TimelineView({ session, filter, onFilter }) {
   const [tags, setTags] = useState([])
   const [sel, setSel] = useState(null)
 
   useEffect(() => {
     get(`/api/sessions/${session.id}/tags`)
-      .then((d) => setTags(d.tags.slice(0, 40)))
+      .then((d) => setTags(d.tags))
       .catch(() => {})
   }, [session.id])
 
   return (
     <div className="timeline">
-      <MessageList session={session} tags={tags} onSelect={setSel} selMsgId={sel?.id} />
-      {sel && <MsgDetail msg={sel} onClose={() => setSel(null)} />}
+      <MessageList session={session} filter={filter} onFilter={onFilter}
+                   tags={tags} onSelect={setSel} selMsgId={sel?.id} />
+      {sel && <MsgDetail msg={sel} tags={tags} onPickTag={(t) => onFilter({ ...filter, tag: t })} onClose={() => setSel(null)} />}
     </div>
   )
 }
 
-function MsgDetail({ msg, onClose }) {
+function MsgDetail({ msg, tags, onPickTag, onClose }) {
   const [editing, setEditing] = useState(false)
   const [tagText, setTagText] = useState('')
+  const mine = msg.direction === 'out'
+
+  const addTag = async (name) => {
+    try {
+      const cur = [...new Set([...(msg.tags || []), name])]
+      await post('/api/messages/tags', { msg_id: msg.id, tags: cur, source: 'manual' })
+      msg.tags = cur
+    } catch (e) { alert('保存失败: ' + e.message) }
+  }
   const saveTags = async () => {
     try {
-      const names = tagText.split(/[,，\s]+/).filter(Boolean)
+      const names = [...new Set(tagText.split(/[,，\s]+/).filter(Boolean))]
       await post('/api/messages/tags', { msg_id: msg.id, tags: names, source: 'manual' })
       msg.tags = names
       setEditing(false)
     } catch (e) { alert('保存失败: ' + e.message) }
   }
-  const mine = msg.direction === 'out'
+
   return (
     <div className="detail-drawer">
       <div className="dd-head"><b>消息详情</b>
@@ -47,22 +57,38 @@ function MsgDetail({ msg, onClose }) {
       <div className="dd-card">
         <div className="dd-sec-title">标签</div>
         <div className="dd-tagcloud">
-          {(msg.tags || []).map((t) => <span key={t} className="dtag">{t}</span>)}
-          {(msg.tags || []).length === 0 && <span className="faint" style={{ fontSize: 11 }}>暂无标签</span>}
+          {(msg.tags || []).map((t) => (
+            <span key={t} className="dtag" title="查看带此标签的所有消息" onClick={() => onPickTag(t)}>{t}</span>
+          ))}
+          {(msg.tags || []).length === 0 && <span className="faint" style={{ fontSize: 11 }}>暂无标签 · 可从下方会话标签添加</span>}
         </div>
-        {!editing ? (
-          <button className="btn-soft btn-sm" onClick={() => { setTagText((msg.tags || []).join(' ')); setEditing(true) }}>✎ 编辑标签</button>
-        ) : (
-          <>
-            <div className="dd-edit-row">
-              <input value={tagText} onChange={(e) => setTagText(e.target.value)} placeholder="空格分隔多个标签" autoFocus />
-            </div>
-            <div className="dd-actions">
+
+        <div style={{ marginTop: 12 }}>
+          <div className="faint" style={{ fontSize: 10.5, marginBottom: 6 }}>会话已有标签 · 点击加入本消息</div>
+          <div className="dd-tagcloud">
+            {(tags || []).slice(0, 40).map((t) => {
+              const has = (msg.tags || []).includes(t.name)
+              return (
+                <button key={t.name} className={`mtag mtag-btn ${has ? 'on' : ''}`}
+                        onClick={() => (has ? onPickTag(t.name) : addTag(t.name))}>
+                  {t.name} <em>{has ? '查看→' : '+'}</em>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="dd-actions" style={{ marginTop: 12 }}>
+          {!editing ? (
+            <button className="btn-soft btn-sm" onClick={() => { setTagText((msg.tags || []).join(' ')); setEditing(true) }}>✎ 自定义标签</button>
+          ) : (
+            <>
+              <input value={tagText} onChange={(e) => setTagText(e.target.value)} placeholder="空格分隔多个标签" autoFocus style={{ flex: 1 }} />
               <button className="btn-accent btn-sm" onClick={saveTags}>保存</button>
               <button className="btn-ghost btn-sm" onClick={() => setEditing(false)}>取消</button>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       <details className="dd-details">

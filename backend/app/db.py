@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     peer_id       TEXT NOT NULL,         -- uin 或 gid
     name          TEXT NOT NULL DEFAULT '',
     self_id       TEXT NOT NULL DEFAULT '',
+    hidden        INTEGER NOT NULL DEFAULT 0,   -- 1=列表隐藏但数据保留
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -124,6 +125,9 @@ class DB:
     def _init_schema(self):
         with self.conn() as c:
             c.executescript(SCHEMA)
+            cols = [r["name"] for r in c.execute("PRAGMA table_info(sessions)")]
+            if "hidden" not in cols:
+                c.execute("ALTER TABLE sessions ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
 
     # ---------- 会话 ----------
     def upsert_session(self, session):
@@ -136,17 +140,30 @@ class DB:
                 (session["id"], session["kind"], session["peer_id"], session["name"],
                  session.get("self_id", ""), now, now))
 
-    def list_sessions(self):
+    def list_sessions(self, include_hidden=False):
         with self.conn() as c:
             rows = c.execute(
+                "SELECT s.*, (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id) msg_count,"
+                " (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id AND m.analyzed=1) analyzed_count"
+                " FROM sessions s WHERE s.hidden=0 ORDER BY s.updated_at DESC" if not include_hidden else
                 "SELECT s.*, (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id) msg_count,"
                 " (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id AND m.analyzed=1) analyzed_count"
                 " FROM sessions s ORDER BY s.updated_at DESC").fetchall()
         return [dict(r) for r in rows]
 
-    def get_session(self, session_id):
+    def set_hidden(self, session_id, hidden=True):
         with self.conn() as c:
-            r = c.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+            cur = c.execute("UPDATE sessions SET hidden=? WHERE id=?",
+                            (1 if hidden else 0, session_id))
+            return cur.rowcount > 0
+
+    def get_session(self, session_id, include_hidden=False):
+        with self.conn() as c:
+            if include_hidden:
+                r = c.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+            else:
+                r = c.execute("SELECT * FROM sessions WHERE id=? AND hidden=0",
+                              (session_id,)).fetchone()
         return dict(r) if r else None
 
     # ---------- 消息 ----------
@@ -169,20 +186,57 @@ class DB:
         with self.conn() as c:
             c.execute("UPDATE messages SET analyzed=? WHERE id=?", (analyzed, msg_id))
 
-    def list_messages(self, session_id, after_id=0, limit=200, tag=None, q=None):
-        sql = ("SELECT * FROM messages WHERE session_id=? AND id>?")
-        args = [session_id, after_id]
+    # kind: link|image|file|voice|video|all；返回 (sql_fragment, args)
+    def _kind_sql(self, kind, prefix="m."):
+        if not kind or kind == "all":
+            return "", []
+        if kind == "link":
+            return f" AND {prefix}text LIKE '%http%'", []
+        marker = {"image": "[图片:", "file": "[文件:",
+                  "voice": "[语音", "video": "[视频"}.get(kind)
+        if marker:
+            return (f" AND ({prefix}text LIKE ? OR {prefix}id IN"
+                    f" (SELECT r.message_id FROM resources r WHERE r.kind=?))",
+                    [f"%{marker}%", kind])
+        return (f" AND {prefix}id IN (SELECT r.message_id FROM resources r"
+                f" WHERE r.kind=?)", [kind])
+
+    def _base_where(self, session_id, tag=None, q=None, kind=None, ts_from=None,
+                    ts_to=None, prefix="m."):
+        sql = f" WHERE {prefix}session_id=?"
+        args = [session_id]
+        if kind and kind != "all":
+            frag, a = self._kind_sql(kind, prefix)
+            sql += frag
+            args += a
+        if ts_from:
+            sql += f" AND {prefix}ts>=?"; args.append(ts_from)
+        if ts_to:
+            sql += f" AND {prefix}ts<=?"; args.append(ts_to)
         if tag:
-            sql += (" AND id IN (SELECT mt.message_id FROM message_tags mt"
-                    " JOIN tags t ON t.id=mt.tag_id WHERE t.name=?)")
+            sql += (f" AND {prefix}id IN (SELECT mt.message_id FROM message_tags mt"
+                    f" JOIN tags t ON t.id=mt.tag_id WHERE t.name=?)")
             args.append(tag)
         if q:
-            sql += " AND text LIKE ?"
+            sql += f" AND {prefix}text LIKE ?"
             args.append(f"%{q}%")
-        sql += " ORDER BY id LIMIT ?"
-        args.append(limit)
+        return sql, args
+
+    def count_filtered(self, session_id, tag=None, q=None, kind=None,
+                       ts_from=None, ts_to=None):
+        sql, args = self._base_where(session_id, tag, q, kind, ts_from, ts_to)
         with self.conn() as c:
-            rows = c.execute(sql, args).fetchall()
+            r = c.execute(f"SELECT COUNT(*) c FROM messages m{sql}", args).fetchone()
+        return r["c"]
+
+    def list_messages(self, session_id, after_id=0, limit=200, tag=None, q=None,
+                      kind=None, ts_from=None, ts_to=None):
+        """kind: link|image|file|voice|video|all。ts_from/ts_to 毫秒，含边界。"""
+        sql, args = self._base_where(session_id, tag, q, kind, ts_from, ts_to)
+        sql += " AND m.id>? ORDER BY m.id LIMIT ?"
+        args += [after_id, limit]
+        with self.conn() as c:
+            rows = c.execute(f"SELECT m.* FROM messages m{sql}", args).fetchall()
         out = []
         for r in rows:
             m = dict(r)
@@ -351,7 +405,7 @@ class DB:
 
     # ---------- 活动统计 ----------
     def daily_activity(self, session_id=None, days=365):
-        """按天聚合消息数（UTC 日边界），用于热力图。"""
+        """按天聚合消息数（本地时区日边界），用于热力图。"""
         span = days * 24 * 3600 * 1000
         now = int(time.time() * 1000)
         if session_id:
@@ -363,7 +417,7 @@ class DB:
         buckets = {}
         import datetime
         for r in rows:
-            day = datetime.datetime.utcfromtimestamp(r["ts"] / 1000).strftime("%Y-%m-%d")
+            day = datetime.datetime.fromtimestamp(r["ts"] / 1000).strftime("%Y-%m-%d")
             buckets[day] = buckets.get(day, 0) + 1
         return buckets
 

@@ -142,14 +142,15 @@ class NapCatLive:
             kind = "friend"
             peer = str(ev.get("user_id", ""))
             wl = self.whitelist.get("private", [])
-            if wl and peer not in wl:
+            # 白名单即允许名单：未显式加入的会话一律不实时收录
+            if peer not in wl:
                 return
             name = self._peer_name(peer)
         elif detail_type == "group":
             kind = "group"
             peer = str(ev.get("group_id", ""))
             wl = self.whitelist.get("groups", [])
-            if wl and peer not in wl:
+            if peer not in wl:
                 return
             name = ""
         else:

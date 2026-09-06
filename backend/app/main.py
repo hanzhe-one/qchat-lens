@@ -110,8 +110,22 @@ def set_whitelist(req: WhitelistReq):
 
 # ============ 会话与消息 ============
 @app.get("/api/sessions")
-def list_sessions():
-    return {"ok": True, "sessions": db.list_sessions()}
+def list_sessions(include_hidden: bool = False):
+    return {"ok": True, "sessions": db.list_sessions(include_hidden=include_hidden)}
+
+
+class SessionVisReq(BaseModel):
+    hidden: bool = True
+
+
+@app.post("/api/sessions/{session_id}/visibility")
+def set_session_visibility(session_id: str, req: SessionVisReq):
+    """隐藏/恢复会话：仅从列表移除，数据与标签全部保留。"""
+    s = db.get_session(session_id, include_hidden=True)
+    if not s:
+        raise HTTPException(404, "会话不存在")
+    db.set_hidden(session_id, req.hidden)
+    return {"ok": True, "session_id": session_id, "hidden": req.hidden}
 
 
 @app.get("/api/sessions/{session_id}/stats")
@@ -120,17 +134,44 @@ def session_stats(session_id: str):
     if not s:
         raise HTTPException(404, "会话不存在")
     st = db.stats(session_id)
-    tags = db.list_tags()
-    return {"ok": True, "session": s, "stats": st, "tags": tags}
+    tags = db.tag_message_ids(session_id)
+    kinds = ["all", "link", "image", "file", "voice", "video"]
+    by_kind = {k: db.count_filtered(session_id, kind=k) for k in kinds}
+    return {"ok": True, "session": s, "stats": st, "tags": tags, "by_kind": by_kind}
+
+
+def _date_span(d: str):
+    """'YYYY-MM-DD' -> [day_start_ms, day_end_ms]，本地时区日边界。"""
+    from datetime import datetime
+    dt = datetime.strptime(d[:10], "%Y-%m-%d")
+    import time as _t
+    start = int(_t.mktime(dt.timetuple()) * 1000)
+    return start, start + 24 * 3600 * 1000 - 1
 
 
 @app.get("/api/sessions/{session_id}/messages")
 def messages(session_id: str, after: int = 0, limit: int = Query(200, le=2000),
-             tag: str = "", q: str = ""):
-    msgs = db.list_messages(session_id, after_id=after, limit=limit, tag=tag, q=q)
+             tag: str = "", q: str = "", kind: str = "all",
+             day: str = "", before_day: str = ""):
+    """kind=all|link|image|file|voice|video；day/before_day 为 'YYYY-MM-DD'。"""
+    ts_from = ts_to = None
+    if day:
+        ts_from, ts_to = _date_span(day)
+    elif before_day:
+        _, ts_to = _date_span(before_day)
+    msgs = db.list_messages(session_id, after_id=after, limit=limit, tag=tag, q=q,
+                            kind=kind, ts_from=ts_from, ts_to=ts_to)
     next_after = msgs[-1]["id"] if msgs else after
     has_more = len(msgs) >= limit
-    return {"ok": True, "messages": msgs, "next_after": next_after, "has_more": has_more}
+    total = None
+    by_kind = None
+    if after == 0:
+        kinds = ["all", "link", "image", "file", "voice", "video"]
+        by_kind = {k: db.count_filtered(session_id, tag=tag, q=q, kind=k,
+                                        ts_from=ts_from, ts_to=ts_to) for k in kinds}
+        total = by_kind.get(kind, by_kind["all"])
+    return {"ok": True, "messages": msgs, "next_after": next_after,
+            "has_more": has_more, "total": total, "by_kind": by_kind}
 
 
 @app.get("/api/messages/{msg_id}")

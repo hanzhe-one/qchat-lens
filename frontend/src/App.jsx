@@ -9,10 +9,13 @@ import GalleryView from './components/GalleryView'
 import HomeView from './components/HomeView'
 import ConfigPanel from './components/ConfigPanel'
 
+export const EMPTY_FILTER = { kind: 'all', tag: '', day: '', q: '' }
+
 export default function App() {
   const [sessions, setSessions] = useState([])
   const [current, setCurrent] = useState(null)
   const [view, setView] = useState('dash') // dash | timeline | topics | gallery
+  const [filter, setFilter] = useState(EMPTY_FILTER)
   const [configOpen, setConfigOpen] = useState(false)
 
   const refresh = useCallback(async () => {
@@ -27,7 +30,18 @@ export default function App() {
   const total = sessions.reduce((a, s) => a + (s.msg_count || 0), 0)
   const totalAnalyzed = sessions.reduce((a, s) => a + (s.analyzed_count || 0), 0)
 
-  const pickSession = (s) => { setCurrent(s); setView('dash') }
+  const pickSession = (s) => { setCurrent(s); setFilter(EMPTY_FILTER); setView('dash') }
+
+  // 从任意入口带着过滤条件跳进消息流
+  const explore = useCallback((f) => {
+    setFilter({ ...EMPTY_FILTER, ...(f || {}) })
+    setView('timeline')
+  }, [])
+
+  const openView = (v) => {
+    if (v === 'timeline') setFilter(EMPTY_FILTER)
+    setView(v)
+  }
 
   return (
     <div className="app">
@@ -54,19 +68,21 @@ export default function App() {
               </div>
               <div className="seg" style={{ marginLeft: 18 }}>
                 <button className={view === 'dash' ? 'on' : ''} onClick={() => setView('dash')}>概览</button>
-                <button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')}>消息</button>
+                <button className={view === 'timeline' ? 'on' : ''} onClick={() => openView('timeline')}>消息</button>
                 <button className={view === 'topics' ? 'on' : ''} onClick={() => setView('topics')}>专题</button>
                 <button className={view === 'gallery' ? 'on' : ''} onClick={() => setView('gallery')}>图库</button>
               </div>
               <div className="mt-right">
-                <button className="btn-ghost btn-sm" onClick={() => setView('timeline')}>浏览消息</button>
+                <button className="btn-ghost btn-sm" onClick={() => explore()}>搜索消息</button>
                 <button className="btn-accent btn-sm" onClick={() => setConfigOpen(true)}>配置 / 导入</button>
               </div>
             </div>
             <div className="main-body">
-              {view === 'dash' && <DashView session={current} onGoto={setView} />}
-              {view === 'timeline' && <TimelineView session={current} />}
-              {view === 'topics' && <TopicView session={current} />}
+              {view === 'dash' && <DashView session={current} onExplore={explore} onGoto={setView} />}
+              {view === 'timeline' && (
+                <TimelineView session={current} filter={filter} onFilter={setFilter} />
+              )}
+              {view === 'topics' && <TopicView session={current} onExplore={explore} />}
               {view === 'gallery' && <GalleryView session={current} />}
             </div>
           </>
