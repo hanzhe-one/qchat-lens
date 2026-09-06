@@ -78,6 +78,26 @@ CREATE TABLE IF NOT EXISTS analysis_log (
     detail      TEXT,
     created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS resources (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    session_id  TEXT NOT NULL,
+    kind        TEXT NOT NULL,             -- image | file | voice | video | audio
+    name        TEXT NOT NULL DEFAULT '',  -- 原始文件名
+    mime        TEXT NOT NULL DEFAULT '',
+    path        TEXT NOT NULL DEFAULT '',  -- 项目内相对路径 data/resources/...
+    src_md5     TEXT NOT NULL DEFAULT '',
+    src_url     TEXT NOT NULL DEFAULT '',
+    size        INTEGER NOT NULL DEFAULT 0,
+    width       INTEGER NOT NULL DEFAULT 0,
+    height      INTEGER NOT NULL DEFAULT 0,
+    ts          INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_res_msg ON resources(message_id);
+CREATE INDEX IF NOT EXISTS ix_res_ses ON resources(session_id, kind, ts);
+CREATE INDEX IF NOT EXISTS ix_res_kind ON resources(session_id, kind);
 """
 
 
@@ -168,6 +188,7 @@ class DB:
             m = dict(r)
             m["raw"] = json.loads(m["raw"])
             m["tags"] = self.message_tags(m["id"])
+            m["resources"] = self.message_resources(m["id"])
             out.append(m)
         return out
 
@@ -179,6 +200,7 @@ class DB:
         m = dict(r)
         m["raw"] = json.loads(m["raw"])
         m["tags"] = self.message_tags(m["id"])
+        m["resources"] = self.message_resources(m["id"])
         return m
 
     def message_range(self, lo_id, hi_id):
@@ -314,6 +336,7 @@ class DB:
         for r in rows:
             m = dict(r)
             m["raw"] = json.loads(m["raw"])
+            m["resources"] = self.message_resources(m["id"])
             out.append(m)
         return out
 
@@ -325,3 +348,88 @@ class DB:
                 " VALUES(?,?,?,?,?,?,?,?,?)",
                 (scope, ref_id, msg_lo, msg_hi, count, "digest", status,
                  (detail or "")[:4000], int(time.time() * 1000)))
+
+    # ---------- 活动统计 ----------
+    def daily_activity(self, session_id=None, days=365):
+        """按天聚合消息数（UTC 日边界），用于热力图。"""
+        span = days * 24 * 3600 * 1000
+        now = int(time.time() * 1000)
+        if session_id:
+            rows = self._q(
+                "SELECT ts FROM messages WHERE session_id=? AND ts>=?",
+                (session_id, now - span))
+        else:
+            rows = self._q("SELECT ts FROM messages WHERE ts>=?", (now - span,))
+        buckets = {}
+        import datetime
+        for r in rows:
+            day = datetime.datetime.utcfromtimestamp(r["ts"] / 1000).strftime("%Y-%m-%d")
+            buckets[day] = buckets.get(day, 0) + 1
+        return buckets
+
+    def _q(self, sql, args=()):
+        with self.conn() as c:
+            return c.execute(sql, args).fetchall()
+
+    def tag_message_ids(self, session_id=None):
+        if session_id:
+            rows = self._q(
+                "SELECT t.name, COUNT(*) c FROM message_tags mt"
+                " JOIN tags t ON t.id=mt.tag_id"
+                " JOIN messages m ON m.id=mt.message_id"
+                " WHERE m.session_id=? GROUP BY t.name ORDER BY c DESC",
+                (session_id,))
+        else:
+            rows = self._q(
+                "SELECT t.name, COUNT(*) c FROM message_tags mt"
+                " JOIN tags t ON t.id=mt.tag_id GROUP BY t.name ORDER BY c DESC")
+        return [{"name": r["name"], "count": r["c"]} for r in rows]
+
+    # ---------- 资源 ----------
+    def clear_resources(self, session_id=None):
+        with self.conn() as c:
+            if session_id:
+                c.execute("DELETE FROM resources WHERE session_id=?", (session_id,))
+            else:
+                c.execute("DELETE FROM resources")
+
+    def insert_resource(self, rec):
+        with self.conn() as c:
+            c.execute(
+                "INSERT INTO resources(message_id,session_id,kind,name,mime,path,"
+                " src_md5,src_url,size,width,height,ts,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (rec["message_id"], rec["session_id"], rec["kind"], rec["name"],
+                 rec.get("mime", ""), rec.get("path", ""), rec.get("src_md5", ""),
+                 rec.get("src_url", ""), rec.get("size", 0), rec.get("width", 0),
+                 rec.get("height", 0), rec.get("ts", 0), int(time.time() * 1000)))
+
+    def list_resources(self, session_id=None, kind=None, after_ts=0, limit=500):
+        sql = "SELECT * FROM resources WHERE 1=1"
+        args = []
+        if session_id:
+            sql += " AND session_id=?"; args.append(session_id)
+        if kind:
+            sql += " AND kind=?"; args.append(kind)
+        if after_ts:
+            sql += " AND ts<?"
+            args.append(after_ts)
+        sql += " ORDER BY ts DESC LIMIT ?"
+        args.append(limit)
+        rows = self._q(sql, args)
+        return [dict(r) for r in rows]
+
+    def message_resources(self, msg_id):
+        rows = self._q("SELECT * FROM resources WHERE message_id=? ORDER BY id", (msg_id,))
+        return [dict(r) for r in rows]
+
+    def find_resource_by_path(self, rel_path):
+        rows = self._q("SELECT * FROM resources WHERE path=? LIMIT 1", (rel_path,))
+        return dict(rows[0]) if rows else None
+
+    def count_resources(self, session_id=None):
+        if session_id:
+            rows = self._q("SELECT COUNT(*) c FROM resources WHERE session_id=?", (session_id,))
+        else:
+            rows = self._q("SELECT COUNT(*) c FROM resources")
+        return rows[0]["c"]

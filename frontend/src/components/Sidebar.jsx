@@ -1,36 +1,48 @@
-export default function Sidebar({ sessions, current, onPick, onConfig }) {
-  const total = sessions.reduce((a, s) => a + s.msg_count, 0)
-  const kindLabel = (k) => (k === 'group' ? '群' : '私')
+export default function Sidebar({ sessions, current, total, totalAnalyzed, onPick, onConfig }) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-logo">Q</div>
-        <div>
+        <div className="brand-mark">Q</div>
+        <div className="brand-t">
           <div className="brand-name">QChat Lens</div>
-          <div className="brand-sub">会话洞察</div>
+          <div className="brand-sub">qq conversation lens</div>
         </div>
       </div>
+
       <div className="side-stats">
-        <div className="stat"><b>{sessions.length}</b><span>会话</span></div>
-        <div className="stat"><b>{total}</b><span>消息</span></div>
+        <div className="stat-card"><b>{sessions.length}</b><span>会话</span></div>
+        <div className="stat-card"><b>{total}</b><span>消息</span></div>
+        <div className="stat-card"><b>{totalAnalyzed}</b><span>已分析</span></div>
+        <div className="stat-card"><b>{total ? Math.round(totalAnalyzed / total * 100) : 0}%</b><span>进度</span></div>
       </div>
-      <div className="side-title">会话列表</div>
+
+      <div className="side-sec-title">会话</div>
       <div className="session-list">
-        {sessions.length === 0 && <div className="empty">暂无会话<br /><span>先在顶部导入 QQ 历史</span></div>}
-        {sessions.map((s) => (
-          <div key={s.id}
-               className={`session-item ${current && current.id === s.id ? 'active' : ''}`}
-               onClick={() => onPick(s)}>
-            <div className="s-avatar">{kindLabel(s.kind)}</div>
-            <div className="s-info">
-              <div className="s-name">{s.name || s.peer_id}</div>
-              <div className="s-sub">{s.msg_count} 条消息</div>
+        {sessions.length === 0 && (
+          <div className="side-empty">还没有导入会话<br />点击下方「配置 / 导入」<br />同步 QQ 聊天历史</div>
+        )}
+        {sessions.map((s) => {
+          const pct = s.msg_count ? Math.round((s.analyzed_count || 0) / s.msg_count * 100) : 0
+          const active = current && current.id === s.id
+          return (
+            <div key={s.id} className={`session-item ${active ? 'active' : ''}`} onClick={() => onPick(s)}>
+              <div className={`s-avatar ${s.kind === 'group' ? 'group' : ''}`}>
+                {s.kind === 'group' ? '群' : (s.name || '?').slice(0, 1)}
+              </div>
+              <div className="s-info">
+                <div className="s-name">{s.name || s.peer_id}</div>
+                <div className="s-sub">{s.msg_count} 条 · {s.peer_id}</div>
+              </div>
+              <div className="s-analyze" title={`${pct}% 已分析`}>
+                <div className="fill"><i style={{ width: pct + '%' }} /></div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
+
       <div className="side-footer">
-        <button className="ghost sm full" onClick={onConfig}>⚙ 配置 / 导入</button>
+        <button className="btn-ghost btn-sm" onClick={onConfig}>⚙ 配置 / 导入</button>
       </div>
     </aside>
   )

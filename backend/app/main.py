@@ -1,5 +1,6 @@
 """QChat Lens — FastAPI 后端主入口。"""
 import json
+import sys
 import threading
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 
 from . import analyzer as analyzer_mod
 from . import config as cfg_mod
+from . import resources_sync
 from .db import DB
 from .importers import NapCatLive, QCEImporter
 
@@ -28,10 +30,14 @@ db = DB(DB_PATH)
 analyzer = analyzer_mod.Analyzer(CONFIG, db)
 qce_importer = QCEImporter(db)
 
-# 后端目录
+# 后端目录 / 前端产物定位（打包后 dist 被捆绑进 _internal/frontend_dist）
 BACKEND = Path(__file__).resolve().parent.parent
 PROJECT = BACKEND.parent
-FRONTEND_DIST = PROJECT / "frontend" / "dist"
+if getattr(sys, "frozen", False):
+    _root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    FRONTEND_DIST = _root / "frontend_dist"
+else:
+    FRONTEND_DIST = PROJECT / "frontend" / "dist"
 
 analysis_lock = threading.Lock()
 analysis_state = {"running": False, "session_id": None, "done": 0, "error": None}
@@ -135,10 +141,73 @@ def message_detail(msg_id: int):
     return {"ok": True, "message": m}
 
 
+# ---------- 资源（图片/文件） ----------
+@app.post("/api/sessions/{session_id}/sync-resources")
+def sync_resources(session_id: str):
+    s = db.get_session(session_id)
+    if not s:
+        raise HTTPException(404, "会话不存在")
+    from .resources_sync import sync_session_resources
+    try:
+        n = sync_session_resources(db, CONFIG, session_id)
+        return {"ok": True, "added": n}
+    except Exception as e:
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+
+
+@app.get("/api/sessions/{session_id}/gallery")
+def gallery(session_id: str, kind: str = "image", after_ts: int = 0, limit: int = 200):
+    s = db.get_session(session_id)
+    if not s:
+        raise HTTPException(404, "会话不存在")
+    res = db.list_resources(session_id, kind, after_ts, limit)
+    return {"ok": True, "resources": res}
+
+
+@app.get("/api/resource")
+def get_resource(path: str = "", download: bool = False):
+    """按 path 返回资源文件；path 为相对 resources_dir 的路径。"""
+    from fastapi.responses import FileResponse
+    if not path:
+        raise HTTPException(400, "缺少 path")
+    root = Path(CONFIG["resources_dir"])
+    fp = (root / path).resolve()
+    if not str(fp).startswith(str(root.resolve())) or not fp.is_file():
+        raise HTTPException(404, "资源不存在")
+    rec = db.find_resource_by_path(path.replace("\\", "/"))
+    name = rec["name"] if rec and rec["name"] else fp.name
+    media_type = rec["mime"] if rec and rec["mime"] else "application/octet-stream"
+    if download:
+        return FileResponse(fp, media_type=media_type, filename=name)
+    return FileResponse(fp, media_type=media_type)
+
+
 # ============ 标签 ============
 @app.get("/api/tags")
 def tags():
     return {"ok": True, "tags": db.list_tags()}
+
+
+@app.get("/api/sessions/{session_id}/activity")
+def session_activity(session_id: str, days: int = 365):
+    s = db.get_session(session_id)
+    if not s:
+        raise HTTPException(404, "会话不存在")
+    return {"ok": True, "activity": db.daily_activity(session_id, days)}
+
+
+@app.get("/api/sessions/{session_id}/tags")
+def session_tags(session_id: str):
+    s = db.get_session(session_id)
+    if not s:
+        raise HTTPException(404, "会话不存在")
+    return {"ok": True, "tags": db.tag_message_ids(session_id)}
+
+
+@app.get("/api/topics/recent")
+def recent_topics(session_id: str = "", limit: int = 6):
+    all_t = db.list_topics(session_id or None)
+    return {"ok": True, "topics": all_t[:limit]}
 
 
 class TagMsgReq(BaseModel):
@@ -245,6 +314,14 @@ def import_qce(req: ImportQceReq):
         raise HTTPException(500, "QCE 未生成导出文件")
     real = Path(path.replace("\\\\?\\", ""))
     result = qce_importer.import_file(str(real))
+    # 导入后自动同步图片/文件资源
+    try:
+        from .resources_sync import sync_session_resources
+        n = sync_session_resources(db, CONFIG, result["session_id"])
+        result["resources"] = n
+    except Exception as e:
+        result["resources"] = 0
+        result["resource_error"] = str(e)
     return {"ok": True, "result": result}
 
 
