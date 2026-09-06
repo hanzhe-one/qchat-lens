@@ -1,0 +1,18 @@
+{
+  "llm": {
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "",
+    "model": "deepseek-chat"
+  },
+  "database": "../data/qchat.db",
+  "qce": {
+    "base_url": "http://127.0.0.1:40653"
+  },
+  "napcat": {
+    "ws_url": "ws://127.0.0.1:3001"
+  },
+  "whitelist": {
+    "private": [],
+    "groups": []
+  }
+}

@@ -1,0 +1,27 @@
+# 依赖
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# 本地数据与配置（隐私：聊天记录 + API Key 绝不入库）
+data/
+backend/config.json
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 运行时
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 文档导出
+*.exe

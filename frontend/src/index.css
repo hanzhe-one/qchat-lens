@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #0a0e14;
+  --bg2: #0f151d;
+  --panel: #131a24;
+  --panel2: #1a2332;
+  --border: #1f2a3a;
+  --border2: #2c3b52;
+  --text: #e8eef7;
+  --muted: #8a97a8;
+  --accent: #5b8cff;
+  --accent-soft: rgba(91, 140, 255, 0.14);
+  --green: #3ecf8e;
+  --green-soft: rgba(62, 207, 142, 0.12);
+  --orange: #f5a623;
+  --purple: #a78bfa;
+  --red: #f45d5d;
+  --radius: 12px;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2c3b52; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3b4d68; }
+
+button {
+  font-family: inherit; font-size: 13px; cursor: pointer;
+  border: none; border-radius: 8px; padding: 7px 14px;
+  background: var(--accent); color: #fff; font-weight: 500;
+  transition: opacity .15s, background .15s;
+}
+button:hover { opacity: .9; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted); }
+button.ghost:hover { color: var(--text); border-color: var(--accent); }
+button.sec { background: var(--accent-soft); color: var(--accent); }
+button.sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+button.danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
+
+input, textarea, select {
+  font-family: inherit; font-size: 13px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border2); border-radius: 8px;
+  padding: 7px 11px; outline: none;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+
+.spin {
+  width: 18px; height: 18px; border: 2px solid var(--border2);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
