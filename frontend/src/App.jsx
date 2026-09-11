@@ -17,6 +17,7 @@ export default function App() {
   const [view, setView] = useState('dash') // dash | timeline | topics | gallery
   const [filter, setFilter] = useState(EMPTY_FILTER)
   const [configOpen, setConfigOpen] = useState(false)
+  const [theme, setTheme] = useState(() => localStorage.getItem('qchat-theme') === 'light' ? 'light' : 'dark')
 
   const refresh = useCallback(async () => {
     try {
@@ -38,16 +39,23 @@ export default function App() {
     setView('timeline')
   }, [])
 
+  const changeTheme = (nextTheme) => {
+    setTheme(nextTheme)
+    localStorage.setItem('qchat-theme', nextTheme)
+  }
+
   const openView = (v) => {
     if (v === 'timeline') setFilter(EMPTY_FILTER)
     setView(v)
   }
 
   return (
-    <div className="app">
+    <div className="app" data-theme={theme}>
       <Sidebar sessions={sessions} current={current}
                total={total} totalAnalyzed={totalAnalyzed}
                onPick={pickSession}
+               onHome={() => setCurrent(null)}
+               theme={theme} onTheme={changeTheme}
                onConfig={() => setConfigOpen(true)} />
       <main className="main">
         {!current ? (
@@ -67,13 +75,13 @@ export default function App() {
                 </div>
               </div>
               <div className="seg" style={{ marginLeft: 18 }}>
-                <button className={view === 'dash' ? 'on' : ''} onClick={() => setView('dash')}>概览</button>
-                <button className={view === 'timeline' ? 'on' : ''} onClick={() => openView('timeline')}>消息</button>
+                <button className={view === 'dash' ? 'on' : ''} onClick={() => setView('dash')}>数据概览</button>
+                <button className={view === 'timeline' ? 'on' : ''} onClick={() => openView('timeline')}>原始消息</button>
                 <button className={view === 'topics' ? 'on' : ''} onClick={() => setView('topics')}>专题</button>
-                <button className={view === 'gallery' ? 'on' : ''} onClick={() => setView('gallery')}>图库</button>
+                <button className={view === 'gallery' ? 'on' : ''} onClick={() => setView('gallery')}>图片</button>
               </div>
               <div className="mt-right">
-                <button className="btn-ghost btn-sm" onClick={() => explore()}>搜索消息</button>
+                <button className="btn-ghost btn-sm" onClick={() => explore()}>搜索原始消息</button>
                 <button className="btn-accent btn-sm" onClick={() => setConfigOpen(true)}>配置 / 导入</button>
               </div>
             </div>

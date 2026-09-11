@@ -1,48 +1,83 @@
-export default function Sidebar({ sessions, current, total, totalAnalyzed, onPick, onConfig }) {
+const THEMES = [
+  { id: 'dark', name: '黑色' },
+  { id: 'light', name: '白色' },
+]
+
+export default function Sidebar({ sessions, current, total, totalAnalyzed, onPick, onHome, onConfig, theme, onTheme }) {
   return (
     <aside className="sidebar">
-      <div className="brand">
+      <button className="brand" onClick={onHome} aria-label="返回 QChat Lens 首页">
         <div className="brand-mark">Q</div>
         <div className="brand-t">
           <div className="brand-name">QChat Lens</div>
-          <div className="brand-sub">qq conversation lens</div>
+          <div className="brand-sub">个人信息收集与知识整理</div>
         </div>
-      </div>
+      </button>
 
-      <div className="side-stats">
-        <div className="stat-card"><b>{sessions.length}</b><span>会话</span></div>
-        <div className="stat-card"><b>{total}</b><span>消息</span></div>
-        <div className="stat-card"><b>{totalAnalyzed}</b><span>已分析</span></div>
-        <div className="stat-card"><b>{total ? Math.round(totalAnalyzed / total * 100) : 0}%</b><span>进度</span></div>
-      </div>
+      <nav className="side-nav" aria-label="主导航">
+        <div className="side-sec-title">知识库</div>
+        <button className="side-nav-item" disabled>
+          <span className="side-nav-icon">⌁</span>
+          <span>收集箱</span>
+          <span className="side-nav-soon">即将上线</span>
+        </button>
+        <button className="side-nav-item" disabled>
+          <span className="side-nav-icon">◇</span>
+          <span>全部知识</span>
+          <span className="side-nav-soon">即将上线</span>
+        </button>
+        <button className={`side-nav-item ${!current ? 'active' : ''}`} onClick={onHome}>
+          <span className="side-nav-icon">⌘</span>
+          <span>信息源</span>
+          <span className="side-nav-count">{sessions.length}</span>
+        </button>
+      </nav>
 
-      <div className="side-sec-title">会话</div>
+      <div className="side-sec-title side-source-title">QQ / TIM 会话</div>
       <div className="session-list">
         {sessions.length === 0 && (
-          <div className="side-empty">还没有导入会话<br />点击下方「配置 / 导入」<br />同步 QQ 聊天历史</div>
+          <div className="side-empty">还没有导入信息源<br />点击下方「配置 / 导入」同步聊天历史</div>
         )}
         {sessions.map((s) => {
           const pct = s.msg_count ? Math.round((s.analyzed_count || 0) / s.msg_count * 100) : 0
           const active = current && current.id === s.id
           return (
-            <div key={s.id} className={`session-item ${active ? 'active' : ''}`} onClick={() => onPick(s)}>
-              <div className={`s-avatar ${s.kind === 'group' ? 'group' : ''}`}>
+            <button key={s.id} className={`session-item ${active ? 'active' : ''}`} onClick={() => onPick(s)}>
+              <span className={`s-avatar ${s.kind === 'group' ? 'group' : ''}`}>
                 {s.kind === 'group' ? '群' : (s.name || '?').slice(0, 1)}
-              </div>
-              <div className="s-info">
-                <div className="s-name">{s.name || s.peer_id}</div>
-                <div className="s-sub">{s.msg_count} 条 · {s.peer_id}</div>
-              </div>
-              <div className="s-analyze" title={`${pct}% 已分析`}>
-                <div className="fill"><i style={{ width: pct + '%' }} /></div>
-              </div>
-            </div>
+              </span>
+              <span className="s-info">
+                <span className="s-name">{s.name || s.peer_id}</span>
+                <span className="s-sub">{s.msg_count} 条 · {pct}% 已分析</span>
+              </span>
+            </button>
           )
         })}
       </div>
 
+      <div className="side-summary">
+        <span>{total.toLocaleString()} 条原始消息</span>
+        <span>{totalAnalyzed.toLocaleString()} 条已分析</span>
+      </div>
+      <div className="theme-picker" aria-label="外观主题">
+        <span className="theme-picker-label">外观</span>
+        <div className="theme-options">
+          {THEMES.map((item) => (
+            <button
+              key={item.id}
+              className={`theme-option ${theme === item.id ? 'active' : ''}`}
+              aria-label={`切换到${item.name}主题`}
+              aria-pressed={theme === item.id}
+              onClick={() => onTheme(item.id)}
+            >
+              <span className={`theme-preview theme-${item.id}`} />
+              {item.name}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="side-footer">
-        <button className="btn-ghost btn-sm" onClick={onConfig}>⚙ 配置 / 导入</button>
+        <button className="btn-ghost btn-sm" onClick={onConfig}>配置 / 导入</button>
       </div>
     </aside>
   )
