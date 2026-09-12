@@ -8,6 +8,7 @@ import TopicView from './components/TopicView'
 import GalleryView from './components/GalleryView'
 import HomeView from './components/HomeView'
 import ConfigPanel from './components/ConfigPanel'
+import InboxView from './components/InboxView'
 
 export const EMPTY_FILTER = { kind: 'all', tag: '', day: '', q: '' }
 
@@ -17,6 +18,7 @@ export default function App() {
   const [view, setView] = useState('dash') // dash | timeline | topics | gallery
   const [filter, setFilter] = useState(EMPTY_FILTER)
   const [configOpen, setConfigOpen] = useState(false)
+  const [workspaceView, setWorkspaceView] = useState('sources')
   const [theme, setTheme] = useState(() => localStorage.getItem('qchat-theme') === 'light' ? 'light' : 'dark')
 
   const refresh = useCallback(async () => {
@@ -31,7 +33,22 @@ export default function App() {
   const total = sessions.reduce((a, s) => a + (s.msg_count || 0), 0)
   const totalAnalyzed = sessions.reduce((a, s) => a + (s.analyzed_count || 0), 0)
 
-  const pickSession = (s) => { setCurrent(s); setFilter(EMPTY_FILTER); setView('dash') }
+  const pickSession = (s) => {
+    setCurrent(s)
+    setWorkspaceView('sources')
+    setFilter(EMPTY_FILTER)
+    setView('dash')
+  }
+
+  const openSources = () => {
+    setCurrent(null)
+    setWorkspaceView('sources')
+  }
+
+  const openInbox = () => {
+    setCurrent(null)
+    setWorkspaceView('inbox')
+  }
 
   // 从任意入口带着过滤条件跳进消息流
   const explore = useCallback((f) => {
@@ -54,11 +71,14 @@ export default function App() {
       <Sidebar sessions={sessions} current={current}
                total={total} totalAnalyzed={totalAnalyzed}
                onPick={pickSession}
-               onHome={() => setCurrent(null)}
+               workspaceView={workspaceView}
+               onHome={openSources} onInbox={openInbox}
                theme={theme} onTheme={changeTheme}
                onConfig={() => setConfigOpen(true)} />
       <main className="main">
-        {!current ? (
+        {workspaceView === 'inbox' ? (
+          <InboxView />
+        ) : !current ? (
           <HomeView sessions={sessions} total={total} totalAnalyzed={totalAnalyzed}
                     onPick={pickSession} onConfig={() => setConfigOpen(true)} />
         ) : (
@@ -66,7 +86,7 @@ export default function App() {
             <div className="main-top">
               <div className="mt-left">
                 <button className="btn-icon mt-back" title="返回所有会话"
-                        onClick={() => setCurrent(null)}>←</button>
+                        onClick={openSources}>←</button>
                 <div>
                   <div className="mt-title">{current.name || current.peer_id}</div>
                   <div className="mt-meta">
