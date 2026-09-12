@@ -133,9 +133,10 @@ export default function DashView({ session, onExplore, onGoto }) {
                       {col.map((c) => (
                         <button key={c.key}
                                 className={`hm-cell l${levelOf(c.val, maxDay)} ${c.val > 0 ? 'live' : ''}`}
-                                disabled={!c.val}
-                                title={`${c.date} · ${c.val} 条 · 点击查看`}
-                                onClick={() => go({ day: c.date })} />
+                                data-tip={`${c.date} · ${c.val} 条消息`}
+                                aria-label={`${c.date}，${c.val} 条消息${c.val > 0 ? '，点击查看' : ''}`}
+                                aria-disabled={!c.val}
+                                onClick={() => c.val > 0 && go({ day: c.date })} />
                       ))}
                     </div>
                   ))}

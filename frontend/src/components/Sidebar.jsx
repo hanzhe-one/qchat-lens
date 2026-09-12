@@ -3,7 +3,7 @@ const THEMES = [
   { id: 'light', name: '白色' },
 ]
 
-export default function Sidebar({ sessions, current, total, totalAnalyzed, onPick, onHome, onConfig, theme, onTheme }) {
+export default function Sidebar({ sessions, current, total, totalAnalyzed, onPick, onHome, onInbox, onConfig, theme, onTheme, workspaceView }) {
   return (
     <aside className="sidebar">
       <button className="brand" onClick={onHome} aria-label="返回 QChat Lens 首页">
@@ -16,17 +16,17 @@ export default function Sidebar({ sessions, current, total, totalAnalyzed, onPic
 
       <nav className="side-nav" aria-label="主导航">
         <div className="side-sec-title">知识库</div>
-        <button className="side-nav-item" disabled>
+        <button className={`side-nav-item ${workspaceView === 'inbox' ? 'active' : ''}`} onClick={onInbox}>
           <span className="side-nav-icon">⌁</span>
           <span>收集箱</span>
-          <span className="side-nav-soon">即将上线</span>
+          <span className="side-nav-count">6</span>
         </button>
         <button className="side-nav-item" disabled>
           <span className="side-nav-icon">◇</span>
           <span>全部知识</span>
           <span className="side-nav-soon">即将上线</span>
         </button>
-        <button className={`side-nav-item ${!current ? 'active' : ''}`} onClick={onHome}>
+        <button className={`side-nav-item ${workspaceView === 'sources' && !current ? 'active' : ''}`} onClick={onHome}>
           <span className="side-nav-icon">⌘</span>
           <span>信息源</span>
           <span className="side-nav-count">{sessions.length}</span>

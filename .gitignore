@@ -2,6 +2,7 @@
 node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/.npm-cache/
 
 # PyInstaller 打包产物（spec 源文件保留入库）
 dist/
@@ -33,3 +34,6 @@ probe_*.py
 run_*.py
 debug_*.py
 smoke_*.py
+
+# Local UI checks and temporary work files
+/work/
