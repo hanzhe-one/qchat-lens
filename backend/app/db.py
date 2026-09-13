@@ -99,6 +99,60 @@ CREATE TABLE IF NOT EXISTS resources (
 CREATE INDEX IF NOT EXISTS ix_res_msg ON resources(message_id);
 CREATE INDEX IF NOT EXISTS ix_res_ses ON resources(session_id, kind, ts);
 CREATE INDEX IF NOT EXISTS ix_res_kind ON resources(session_id, kind);
+
+CREATE TABLE IF NOT EXISTS agent_candidates (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id    TEXT NOT NULL REFERENCES sessions(id),
+    message_id    INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    url           TEXT NOT NULL UNIQUE,
+    domain        TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    category      TEXT NOT NULL,
+    summary       TEXT NOT NULL DEFAULT '',
+    tags          TEXT NOT NULL DEFAULT '[]',
+    status        TEXT NOT NULL DEFAULT 'pending',
+    confidence    INTEGER NOT NULL DEFAULT 0,
+    sender_name   TEXT NOT NULL DEFAULT '',
+    ts            INTEGER NOT NULL,
+    quote         TEXT NOT NULL DEFAULT '',
+    note          TEXT NOT NULL DEFAULT '',
+    source_count  INTEGER NOT NULL DEFAULT 1,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_agent_candidates_status ON agent_candidates(status, ts);
+CREATE INDEX IF NOT EXISTS ix_agent_candidates_session ON agent_candidates(session_id, ts);
+
+CREATE TABLE IF NOT EXISTS knowledge_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id  INTEGER NOT NULL UNIQUE REFERENCES agent_candidates(id) ON DELETE CASCADE,
+    url           TEXT NOT NULL UNIQUE,
+    domain        TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    category      TEXT NOT NULL,
+    summary       TEXT NOT NULL DEFAULT '',
+    tags          TEXT NOT NULL DEFAULT '[]',
+    status        TEXT NOT NULL DEFAULT 'active',
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_knowledge_items_category ON knowledge_items(category, created_at);
+
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id     INTEGER NOT NULL REFERENCES agent_candidates(id) ON DELETE CASCADE,
+    knowledge_item_id INTEGER REFERENCES knowledge_items(id) ON DELETE SET NULL,
+    message_id       INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    session_id       TEXT NOT NULL,
+    url              TEXT NOT NULL,
+    sender_name      TEXT NOT NULL DEFAULT '',
+    ts               INTEGER NOT NULL,
+    quote            TEXT NOT NULL DEFAULT '',
+    created_at       INTEGER NOT NULL,
+    UNIQUE(candidate_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS ix_knowledge_sources_candidate ON knowledge_sources(candidate_id, ts);
+CREATE INDEX IF NOT EXISTS ix_knowledge_sources_message ON knowledge_sources(message_id);
 """
 
 
@@ -438,6 +492,139 @@ class DB:
                 "SELECT t.name, COUNT(*) c FROM message_tags mt"
                 " JOIN tags t ON t.id=mt.tag_id GROUP BY t.name ORDER BY c DESC")
         return [{"name": r["name"], "count": r["c"]} for r in rows]
+
+    # ---------- Agent inbox / knowledge ----------
+    def list_link_messages(self, session_id=None, limit=10000):
+        sql = ("SELECT m.*, s.name AS session_name FROM messages m"
+               " JOIN sessions s ON s.id=m.session_id"
+               " WHERE instr(m.text, 'http') > 0")
+        args = []
+        if session_id:
+            sql += " AND m.session_id=?"
+            args.append(session_id)
+        sql += " ORDER BY m.id LIMIT ?"
+        args.append(limit)
+        with self.conn() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_agent_candidate(self, rec):
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO agent_candidates(session_id,message_id,url,domain,title,category,"
+                " summary,tags,status,confidence,sender_name,ts,quote,note,source_count,created_at,updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)"
+                " ON CONFLICT(url) DO UPDATE SET"
+                " domain=excluded.domain, title=excluded.title, category=excluded.category,"
+                " summary=excluded.summary, tags=excluded.tags,"
+                " status=CASE WHEN agent_candidates.status='pending' THEN excluded.status ELSE agent_candidates.status END,"
+                " confidence=excluded.confidence, sender_name=excluded.sender_name, ts=excluded.ts,"
+                " quote=excluded.quote, note=excluded.note, updated_at=excluded.updated_at",
+                (rec["session_id"], rec["message_id"], rec["url"], rec["domain"],
+                 rec["title"], rec["category"], rec.get("summary", ""),
+                 json.dumps(rec.get("tags", []), ensure_ascii=False),
+                 rec.get("status", "pending"), rec.get("confidence", 0),
+                 rec.get("sender_name", ""), rec["ts"], rec.get("quote", ""),
+                 rec.get("note", ""), now, now))
+            candidate_id = cur.lastrowid if cur.lastrowid else c.execute(
+                "SELECT id FROM agent_candidates WHERE url=?", (rec["url"],)).fetchone()["id"]
+        return candidate_id
+
+    def add_knowledge_source(self, candidate_id, rec):
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            c.execute(
+                "INSERT OR IGNORE INTO knowledge_sources(candidate_id,message_id,session_id,url,"
+                " sender_name,ts,quote,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                (candidate_id, rec["message_id"], rec["session_id"], rec["url"],
+                 rec.get("sender_name", ""), rec["ts"], rec.get("quote", ""), now))
+            c.execute(
+                "UPDATE agent_candidates SET source_count=("
+                " SELECT COUNT(*) FROM knowledge_sources WHERE candidate_id=?), updated_at=?"
+                " WHERE id=?", (candidate_id, now, candidate_id))
+
+    def _agent_candidate_row(self, row):
+        if not row:
+            return None
+        item = dict(row)
+        item["tags"] = json.loads(item.get("tags") or "[]")
+        return item
+
+    def list_agent_candidates(self, statuses=("pending", "later"), limit=500):
+        placeholders = ",".join("?" for _ in statuses)
+        sql = ("SELECT ac.*, s.name AS session_name FROM agent_candidates ac"
+               " LEFT JOIN sessions s ON s.id=ac.session_id"
+               f" WHERE ac.status IN ({placeholders}) ORDER BY ac.ts DESC LIMIT ?")
+        with self.conn() as c:
+            rows = c.execute(sql, (*statuses, limit)).fetchall()
+        return [self._agent_candidate_row(r) for r in rows]
+
+    def get_agent_candidate(self, candidate_id):
+        with self.conn() as c:
+            r = c.execute(
+                "SELECT ac.*, s.name AS session_name FROM agent_candidates ac"
+                " LEFT JOIN sessions s ON s.id=ac.session_id WHERE ac.id=?",
+                (candidate_id,)).fetchone()
+        return self._agent_candidate_row(r)
+
+    def agent_candidate_sources(self, candidate_id, limit=20):
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT ks.*, s.name AS session_name FROM knowledge_sources ks"
+                " LEFT JOIN sessions s ON s.id=ks.session_id"
+                " WHERE ks.candidate_id=? ORDER BY ks.ts DESC LIMIT ?",
+                (candidate_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_agent_candidate_status(self, candidate_id, status):
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            cur = c.execute(
+                "UPDATE agent_candidates SET status=?, updated_at=? WHERE id=?",
+                (status, now, candidate_id))
+            return cur.rowcount > 0
+
+    def accept_agent_candidate(self, candidate_id):
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            r = c.execute("SELECT * FROM agent_candidates WHERE id=?", (candidate_id,)).fetchone()
+            if not r:
+                return None
+            item = dict(r)
+            cur = c.execute(
+                "INSERT INTO knowledge_items(candidate_id,url,domain,title,category,summary,tags,"
+                " status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'active',?,?)"
+                " ON CONFLICT(candidate_id) DO UPDATE SET"
+                " url=excluded.url, domain=excluded.domain, title=excluded.title,"
+                " category=excluded.category, summary=excluded.summary, tags=excluded.tags,"
+                " updated_at=excluded.updated_at",
+                (item["id"], item["url"], item["domain"], item["title"], item["category"],
+                 item["summary"], item["tags"], now, now))
+            knowledge_id = cur.lastrowid if cur.lastrowid else c.execute(
+                "SELECT id FROM knowledge_items WHERE candidate_id=?", (candidate_id,)).fetchone()["id"]
+            c.execute("UPDATE knowledge_sources SET knowledge_item_id=? WHERE candidate_id=?",
+                      (knowledge_id, candidate_id))
+            c.execute("UPDATE agent_candidates SET status='accepted', updated_at=? WHERE id=?",
+                      (now, candidate_id))
+        return knowledge_id
+
+    def list_knowledge_items(self, category=None, limit=500):
+        sql = "SELECT * FROM knowledge_items"
+        args = []
+        if category:
+            sql += " WHERE category=?"
+            args.append(category)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        args.append(limit)
+        with self.conn() as c:
+            rows = c.execute(sql, args).fetchall()
+        out = []
+        for r in rows:
+            item = dict(r)
+            item["tags"] = json.loads(item.get("tags") or "[]")
+            out.append(item)
+        return out
 
     # ---------- 资源 ----------
     def clear_resources(self, session_id=None):

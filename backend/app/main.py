@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from . import analyzer as analyzer_mod
 from . import config as cfg_mod
+from . import inbox as inbox_mod
 from . import resources_sync
 from .db import DB
 from .importers import NapCatLive, QCEImporter
@@ -180,6 +181,79 @@ def message_detail(msg_id: int):
     if not m:
         raise HTTPException(404, "消息不存在")
     return {"ok": True, "message": m}
+
+
+# ---------- Agent 收集箱 ----------
+class InboxStatusReq(BaseModel):
+    status: str
+
+
+class InboxScanReq(BaseModel):
+    session_id: str = ""
+    limit: int = 10000
+
+
+class InboxAcceptReq(BaseModel):
+    ids: list[int] = []
+
+
+@app.get("/api/inbox")
+def list_inbox(status: str = "active", limit: int = Query(500, le=2000)):
+    status_map = {
+        "active": ("pending", "later"),
+        "pending": ("pending",),
+        "later": ("later",),
+        "ignored": ("ignored",),
+        "accepted": ("accepted",),
+        "all": None,
+    }
+    statuses = status_map.get(status)
+    if statuses is None and status != "all":
+        raise HTTPException(400, "不支持的状态")
+    items = db.list_agent_candidates(statuses=statuses or ("pending", "later"), limit=limit) if status != "all" else db.list_agent_candidates(statuses=("pending", "later", "ignored", "accepted"), limit=limit)
+    return {"ok": True, "items": items, "count": len(items)}
+
+
+@app.post("/api/inbox/scan")
+def scan_inbox(req: InboxScanReq):
+    result = inbox_mod.scan_inbox(db, session_id=req.session_id or None, limit=req.limit)
+    return {"ok": True, "result": result}
+
+
+@app.patch("/api/inbox/{candidate_id}")
+def update_inbox_item(candidate_id: int, req: InboxStatusReq):
+    if req.status not in ("pending", "later", "ignored"):
+        raise HTTPException(400, "状态只能是 pending / later / ignored")
+    if not db.set_agent_candidate_status(candidate_id, req.status):
+        raise HTTPException(404, "收集项不存在")
+    return {"ok": True, "id": candidate_id, "status": req.status}
+
+
+@app.post("/api/inbox/{candidate_id}/accept")
+def accept_inbox_item(candidate_id: int):
+    knowledge_id = db.accept_agent_candidate(candidate_id)
+    if knowledge_id is None:
+        raise HTTPException(404, "收集项不存在")
+    return {"ok": True, "id": candidate_id, "knowledge_id": knowledge_id}
+
+
+@app.post("/api/inbox/accept")
+def accept_inbox_items(req: InboxAcceptReq):
+    accepted = []
+    for candidate_id in req.ids:
+        knowledge_id = db.accept_agent_candidate(candidate_id)
+        if knowledge_id is not None:
+            accepted.append(candidate_id)
+    return {"ok": True, "accepted": accepted, "count": len(accepted)}
+
+
+@app.get("/api/inbox/{candidate_id}")
+def inbox_item_detail(candidate_id: int):
+    item = db.get_agent_candidate(candidate_id)
+    if not item:
+        raise HTTPException(404, "收集项不存在")
+    sources = db.agent_candidate_sources(candidate_id)
+    return {"ok": True, "item": item, "sources": sources}
 
 
 # ---------- 资源（图片/文件） ----------
