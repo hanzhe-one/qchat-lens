@@ -13,6 +13,7 @@ async function api(path, opts = {}) {
 
 export const get = (p) => api(p)
 export const post = (p, body) => api(p, { method: 'POST', body: JSON.stringify(body) })
+export const patch = (p, body) => api(p, { method: 'PATCH', body: JSON.stringify(body) })
 
 export function fmtTs(ms) {
   if (!ms) return ''

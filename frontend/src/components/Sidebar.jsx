@@ -3,7 +3,7 @@ const THEMES = [
   { id: 'light', name: '白色' },
 ]
 
-export default function Sidebar({ sessions, current, total, totalAnalyzed, onPick, onHome, onInbox, onConfig, theme, onTheme, workspaceView }) {
+export default function Sidebar({ sessions, current, total, totalAnalyzed, inboxCount = 0, onPick, onHome, onInbox, onConfig, theme, onTheme, workspaceView }) {
   return (
     <aside className="sidebar">
       <button className="brand" onClick={onHome} aria-label="返回 QChat Lens 首页">
@@ -19,7 +19,7 @@ export default function Sidebar({ sessions, current, total, totalAnalyzed, onPic
         <button className={`side-nav-item ${workspaceView === 'inbox' ? 'active' : ''}`} onClick={onInbox}>
           <span className="side-nav-icon">⌁</span>
           <span>收集箱</span>
-          <span className="side-nav-count">6</span>
+          <span className="side-nav-count">{inboxCount}</span>
         </button>
         <button className="side-nav-item" disabled>
           <span className="side-nav-icon">◇</span>

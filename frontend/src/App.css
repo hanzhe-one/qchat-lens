@@ -1210,6 +1210,9 @@
   color: var(--faint);
 }
 .inbox-search input { width: 100%; padding-inline: 0; border: 0; background: transparent; box-shadow: none !important; }
+.inbox-tools { display: flex; align-items: center; gap: 8px; }
+.inbox-tools button { white-space: nowrap; }
+.inbox-notice.is-error { color: #ef4444; border-color: rgba(239,68,68,.35); }
 .inbox-notice, .inbox-bulk {
   max-width: 1180px;
   margin: 0 auto 12px;

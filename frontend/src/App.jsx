@@ -19,6 +19,7 @@ export default function App() {
   const [filter, setFilter] = useState(EMPTY_FILTER)
   const [configOpen, setConfigOpen] = useState(false)
   const [workspaceView, setWorkspaceView] = useState('sources')
+  const [inboxCount, setInboxCount] = useState(0)
   const [theme, setTheme] = useState(() => localStorage.getItem('qchat-theme') === 'light' ? 'light' : 'dark')
 
   const refresh = useCallback(async () => {
@@ -50,6 +51,22 @@ export default function App() {
     setWorkspaceView('inbox')
   }
 
+  const handleInboxCount = useCallback((count) => {
+    setInboxCount(count)
+  }, [])
+
+  const openInboxSource = useCallback((item) => {
+    const session = sessions.find((s) => s.id === item.session_id)
+    if (!session) return
+    const day = new Date(item.ts)
+    const pad = (n) => String(n).padStart(2, '0')
+    const dayKey = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
+    setCurrent(session)
+    setWorkspaceView('sources')
+    setFilter({ ...EMPTY_FILTER, kind: 'link', day: dayKey, q: item.domain || item.url })
+    setView('timeline')
+  }, [sessions])
+
   // 从任意入口带着过滤条件跳进消息流
   const explore = useCallback((f) => {
     setFilter({ ...EMPTY_FILTER, ...(f || {}) })
@@ -70,6 +87,7 @@ export default function App() {
     <div className="app" data-theme={theme}>
       <Sidebar sessions={sessions} current={current}
                total={total} totalAnalyzed={totalAnalyzed}
+               inboxCount={inboxCount}
                onPick={pickSession}
                workspaceView={workspaceView}
                onHome={openSources} onInbox={openInbox}
@@ -77,7 +95,7 @@ export default function App() {
                onConfig={() => setConfigOpen(true)} />
       <main className="main">
         {workspaceView === 'inbox' ? (
-          <InboxView />
+          <InboxView onOpenSource={openInboxSource} onCountChange={handleInboxCount} />
         ) : !current ? (
           <HomeView sessions={sessions} total={total} totalAnalyzed={totalAnalyzed}
                     onPick={pickSession} onConfig={() => setConfigOpen(true)} />
