@@ -256,6 +256,22 @@ def inbox_item_detail(candidate_id: int):
     return {"ok": True, "item": item, "sources": sources}
 
 
+# ---------- 全部知识 ----------
+@app.get("/api/knowledge")
+def list_knowledge(category: str = "", q: str = "", limit: int = Query(500, le=2000)):
+    items = db.list_knowledge_items(category=category or None, q=q, limit=limit)
+    return {"ok": True, "items": items, "count": len(items)}
+
+
+@app.get("/api/knowledge/{item_id}")
+def knowledge_item_detail(item_id: int):
+    item = db.get_knowledge_item(item_id)
+    if not item:
+        raise HTTPException(404, "知识条目不存在")
+    sources = db.knowledge_item_sources(item_id)
+    return {"ok": True, "item": item, "sources": sources}
+
+
 # ---------- 资源（图片/文件） ----------
 @app.post("/api/sessions/{session_id}/sync-resources")
 def sync_resources(session_id: str):
