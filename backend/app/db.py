@@ -539,6 +539,13 @@ class DB:
                 " sender_name,ts,quote,created_at) VALUES(?,?,?,?,?,?,?,?)",
                 (candidate_id, rec["message_id"], rec["session_id"], rec["url"],
                  rec.get("sender_name", ""), rec["ts"], rec.get("quote", ""), now))
+            knowledge = c.execute(
+                "SELECT id FROM knowledge_items WHERE candidate_id=?", (candidate_id,)).fetchone()
+            if knowledge:
+                c.execute(
+                    "UPDATE knowledge_sources SET knowledge_item_id=?"
+                    " WHERE candidate_id=? AND knowledge_item_id IS NULL",
+                    (knowledge["id"], candidate_id))
             c.execute(
                 "UPDATE agent_candidates SET source_count=("
                 " SELECT COUNT(*) FROM knowledge_sources WHERE candidate_id=?), updated_at=?"
@@ -609,13 +616,25 @@ class DB:
                       (now, candidate_id))
         return knowledge_id
 
-    def list_knowledge_items(self, category=None, limit=500):
-        sql = "SELECT * FROM knowledge_items"
+    def list_knowledge_items(self, category=None, q="", limit=500):
+        sql = (
+            "SELECT ki.*, COUNT(ks.id) AS source_count "
+            "FROM knowledge_items ki "
+            "LEFT JOIN knowledge_sources ks ON ks.knowledge_item_id=ki.id"
+        )
         args = []
+        where = []
         if category:
-            sql += " WHERE category=?"
+            where.append("ki.category=?")
             args.append(category)
-        sql += " ORDER BY created_at DESC LIMIT ?"
+        if q:
+            like = f"%{q}%"
+            where.append(
+                "(ki.title LIKE ? OR ki.domain LIKE ? OR ki.summary LIKE ? OR ki.tags LIKE ?)")
+            args.extend([like, like, like, like])
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " GROUP BY ki.id ORDER BY ki.created_at DESC LIMIT ?"
         args.append(limit)
         with self.conn() as c:
             rows = c.execute(sql, args).fetchall()
@@ -626,7 +645,31 @@ class DB:
             out.append(item)
         return out
 
+    def get_knowledge_item(self, item_id):
+        with self.conn() as c:
+            r = c.execute(
+                "SELECT ki.*, COUNT(ks.id) AS source_count "
+                "FROM knowledge_items ki "
+                "LEFT JOIN knowledge_sources ks ON ks.knowledge_item_id=ki.id "
+                "WHERE ki.id=? GROUP BY ki.id",
+                (item_id,)).fetchone()
+        if not r:
+            return None
+        item = dict(r)
+        item["tags"] = json.loads(item.get("tags") or "[]")
+        return item
+
+    def knowledge_item_sources(self, item_id, limit=50):
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT ks.*, s.name AS session_name FROM knowledge_sources ks "
+                "LEFT JOIN sessions s ON s.id=ks.session_id "
+                "WHERE ks.knowledge_item_id=? ORDER BY ks.ts DESC LIMIT ?",
+                (item_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
     # ---------- 资源 ----------
+
     def clear_resources(self, session_id=None):
         with self.conn() as c:
             if session_id:

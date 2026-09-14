@@ -9,6 +9,7 @@ import GalleryView from './components/GalleryView'
 import HomeView from './components/HomeView'
 import ConfigPanel from './components/ConfigPanel'
 import InboxView from './components/InboxView'
+import KnowledgeView from './components/KnowledgeView'
 
 export const EMPTY_FILTER = { kind: 'all', tag: '', day: '', q: '' }
 
@@ -20,6 +21,7 @@ export default function App() {
   const [configOpen, setConfigOpen] = useState(false)
   const [workspaceView, setWorkspaceView] = useState('sources')
   const [inboxCount, setInboxCount] = useState(0)
+  const [knowledgeCount, setKnowledgeCount] = useState(0)
   const [theme, setTheme] = useState(() => localStorage.getItem('qchat-theme') === 'light' ? 'light' : 'dark')
 
   const refresh = useCallback(async () => {
@@ -51,8 +53,17 @@ export default function App() {
     setWorkspaceView('inbox')
   }
 
+  const openKnowledge = () => {
+    setCurrent(null)
+    setWorkspaceView('knowledge')
+  }
+
   const handleInboxCount = useCallback((count) => {
     setInboxCount(count)
+  }, [])
+
+  const handleKnowledgeCount = useCallback((count) => {
+    setKnowledgeCount(count)
   }, [])
 
   const openInboxSource = useCallback((item) => {
@@ -88,14 +99,17 @@ export default function App() {
       <Sidebar sessions={sessions} current={current}
                total={total} totalAnalyzed={totalAnalyzed}
                inboxCount={inboxCount}
+               knowledgeCount={knowledgeCount}
                onPick={pickSession}
                workspaceView={workspaceView}
-               onHome={openSources} onInbox={openInbox}
+               onHome={openSources} onInbox={openInbox} onKnowledge={openKnowledge}
                theme={theme} onTheme={changeTheme}
                onConfig={() => setConfigOpen(true)} />
       <main className="main">
         {workspaceView === 'inbox' ? (
           <InboxView onOpenSource={openInboxSource} onCountChange={handleInboxCount} />
+        ) : workspaceView === 'knowledge' ? (
+          <KnowledgeView onOpenSource={openInboxSource} onCountChange={handleKnowledgeCount} />
         ) : !current ? (
           <HomeView sessions={sessions} total={total} totalAnalyzed={totalAnalyzed}
                     onPick={pickSession} onConfig={() => setConfigOpen(true)} />
