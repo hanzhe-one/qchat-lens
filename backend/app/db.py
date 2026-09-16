@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
     category      TEXT NOT NULL,
     summary       TEXT NOT NULL DEFAULT '',
     tags          TEXT NOT NULL DEFAULT '[]',
-    status        TEXT NOT NULL DEFAULT 'active',
+    status        TEXT NOT NULL DEFAULT 'unread',
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -182,6 +182,7 @@ class DB:
             cols = [r["name"] for r in c.execute("PRAGMA table_info(sessions)")]
             if "hidden" not in cols:
                 c.execute("ALTER TABLE sessions ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+            c.execute("UPDATE knowledge_items SET status='unread' WHERE status='active'")
 
     # ---------- 会话 ----------
     def upsert_session(self, session):
@@ -601,7 +602,7 @@ class DB:
             item = dict(r)
             cur = c.execute(
                 "INSERT INTO knowledge_items(candidate_id,url,domain,title,category,summary,tags,"
-                " status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'active',?,?)"
+                " status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'unread',?,?)"
                 " ON CONFLICT(candidate_id) DO UPDATE SET"
                 " url=excluded.url, domain=excluded.domain, title=excluded.title,"
                 " category=excluded.category, summary=excluded.summary, tags=excluded.tags,"
@@ -658,6 +659,16 @@ class DB:
         item = dict(r)
         item["tags"] = json.loads(item.get("tags") or "[]")
         return item
+
+    def update_knowledge_item(self, item_id, title, category, summary, tags, status):
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            cur = c.execute(
+                "UPDATE knowledge_items SET title=?, category=?, summary=?, tags=?,"
+                " status=?, updated_at=? WHERE id=?",
+                (title, category, summary, json.dumps(tags, ensure_ascii=False),
+                 status, now, item_id))
+            return cur.rowcount > 0
 
     def knowledge_item_sources(self, item_id, limit=50):
         with self.conn() as c:

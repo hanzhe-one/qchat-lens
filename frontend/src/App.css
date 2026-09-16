@@ -1311,6 +1311,49 @@
   border-color: #fff;
 }
 
+.knowledge-status-bar { margin-top: -6px; }
+.knowledge-status-bar .inbox-filters button {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.knowledge-status-bar .inbox-filters button em {
+  font-style: normal; color: var(--faint); font-family: var(--mono); font-size: 10px;
+}
+.knowledge-status-bar .inbox-filters button.active em { color: inherit; opacity: .7; }
+
+.inbox-detail-head-actions { display: flex; align-items: center; gap: 6px; }
+
+.inbox-status.status-read { color: var(--muted); }
+.inbox-status.status-unread { color: var(--text); border-color: var(--line-strong); }
+.inbox-status.status-used { color: var(--blue); border-color: rgba(110,168,254,.4); }
+.inbox-status.status-starred { color: var(--orange); border-color: rgba(242,169,127,.42); }
+.inbox-status.status-expired { color: var(--faint); text-decoration: line-through; }
+
+.knowledge-quick-status {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;
+}
+.knowledge-quick-status .btn-ghost.on {
+  color: var(--text); border-color: var(--line-strong); background: var(--raised);
+}
+
+.knowledge-form { display: flex; flex-direction: column; gap: 14px; }
+.knowledge-field { display: flex; flex-direction: column; gap: 6px; }
+.knowledge-field > span {
+  color: var(--faint); font-size: 10px; font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase;
+}
+.knowledge-field input,
+.knowledge-field select,
+.knowledge-field textarea {
+  width: 100%; padding: 9px 11px; color: var(--text);
+  font-family: var(--content-font); font-size: 13px; line-height: 1.6;
+}
+.knowledge-field textarea { resize: vertical; min-height: 96px; }
+.knowledge-form-actions { display: flex; gap: 8px; padding-top: 4px; }
+
+.app[data-theme='light'] .knowledge-quick-status .btn-ghost.on {
+  background: rgba(255,255,255,.72); border-color: rgba(24,24,27,.18);
+}
+
 @media (max-width: 1050px) {
   .inbox-workspace { grid-template-columns: minmax(0, 1fr) 330px; }
 }

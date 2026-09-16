@@ -197,6 +197,14 @@ class InboxAcceptReq(BaseModel):
     ids: list[int] = []
 
 
+class KnowledgeUpdateReq(BaseModel):
+    title: str
+    category: str
+    summary: str = ""
+    tags: list[str] = []
+    status: str = "unread"
+
+
 @app.get("/api/inbox")
 def list_inbox(status: str = "active", limit: int = Query(500, le=2000)):
     status_map = {
@@ -257,6 +265,17 @@ def inbox_item_detail(candidate_id: int):
 
 
 # ---------- 全部知识 ----------
+KNOWLEDGE_STATUSES = ("unread", "read", "used", "starred", "expired")
+
+
+class KnowledgeUpdateReq(BaseModel):
+    title: str = ""
+    category: str = ""
+    summary: str = ""
+    tags: list[str] = []
+    status: str = ""
+
+
 @app.get("/api/knowledge")
 def list_knowledge(category: str = "", q: str = "", limit: int = Query(500, le=2000)):
     items = db.list_knowledge_items(category=category or None, q=q, limit=limit)
@@ -270,6 +289,53 @@ def knowledge_item_detail(item_id: int):
         raise HTTPException(404, "知识条目不存在")
     sources = db.knowledge_item_sources(item_id)
     return {"ok": True, "item": item, "sources": sources}
+
+
+@app.patch("/api/knowledge/{item_id}")
+def update_knowledge_item(item_id: int, req: KnowledgeUpdateReq):
+    item = db.get_knowledge_item(item_id)
+    if not item:
+        raise HTTPException(404, "知识条目不存在")
+    title = req.title.strip() or item["title"] or item["domain"]
+    category = req.category.strip() or item["category"]
+    status = req.status.strip() or item["status"]
+    if status not in KNOWLEDGE_STATUSES:
+        raise HTTPException(400, "不支持的状态")
+    tags = [t.strip() for t in req.tags if t.strip()]
+    if not db.update_knowledge_item(item_id, title, category, req.summary,
+                                    tags, status):
+        raise HTTPException(404, "知识条目不存在")
+    return {"ok": True, "item": db.get_knowledge_item(item_id)}
+
+
+@app.patch("/api/knowledge/{item_id}")
+def update_knowledge_item(item_id: int, req: KnowledgeUpdateReq):
+    title = req.title.strip()
+    category = req.category.strip()
+    summary = req.summary.strip()
+    tags = []
+    for raw_tag in req.tags:
+        tag = raw_tag.strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    allowed_statuses = {"unread", "read", "used", "favorite", "expired"}
+    if not title:
+        raise HTTPException(400, "标题不能为空")
+    if len(title) > 200:
+        raise HTTPException(400, "标题不能超过 200 个字符")
+    if not category:
+        raise HTTPException(400, "分类不能为空")
+    if len(category) > 50:
+        raise HTTPException(400, "分类不能超过 50 个字符")
+    if len(summary) > 5000:
+        raise HTTPException(400, "摘要不能超过 5000 个字符")
+    if len(tags) > 20:
+        raise HTTPException(400, "标签不能超过 20 个")
+    if req.status not in allowed_statuses:
+        raise HTTPException(400, "不支持的知识状态")
+    if not db.update_knowledge_item(item_id, title, category, summary, tags, req.status):
+        raise HTTPException(404, "知识条目不存在")
+    return {"ok": True, "item": db.get_knowledge_item(item_id)}
 
 
 # ---------- 资源（图片/文件） ----------
