@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -197,14 +197,6 @@ class InboxAcceptReq(BaseModel):
     ids: list[int] = []
 
 
-class KnowledgeUpdateReq(BaseModel):
-    title: str
-    category: str
-    summary: str = ""
-    tags: list[str] = []
-    status: str = "unread"
-
-
 @app.get("/api/inbox")
 def list_inbox(status: str = "active", limit: int = Query(500, le=2000)):
     status_map = {
@@ -282,6 +274,26 @@ def list_knowledge(category: str = "", q: str = "", limit: int = Query(500, le=2
     return {"ok": True, "items": items, "count": len(items)}
 
 
+@app.get("/api/knowledge/export")
+def export_knowledge(format: str = "json", ids: str = ""):
+    item_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()] if ids else None
+    items = db.export_knowledge_items(item_ids)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    if format in ("markdown", "md"):
+        content = _knowledge_markdown(items)
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition":
+                     f'attachment; filename="qchat-lens-{stamp}.md"'})
+    return Response(
+        content=json.dumps({"ok": True, "count": len(items), "items": items},
+                           ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition":
+                 f'attachment; filename="qchat-lens-{stamp}.json"'})
+
+
 @app.get("/api/knowledge/{item_id}")
 def knowledge_item_detail(item_id: int):
     item = db.get_knowledge_item(item_id)
@@ -298,44 +310,98 @@ def update_knowledge_item(item_id: int, req: KnowledgeUpdateReq):
         raise HTTPException(404, "知识条目不存在")
     title = req.title.strip() or item["title"] or item["domain"]
     category = req.category.strip() or item["category"]
+    summary = req.summary.strip()
     status = req.status.strip() or item["status"]
     if status not in KNOWLEDGE_STATUSES:
-        raise HTTPException(400, "不支持的状态")
-    tags = [t.strip() for t in req.tags if t.strip()]
-    if not db.update_knowledge_item(item_id, title, category, req.summary,
-                                    tags, status):
-        raise HTTPException(404, "知识条目不存在")
-    return {"ok": True, "item": db.get_knowledge_item(item_id)}
-
-
-@app.patch("/api/knowledge/{item_id}")
-def update_knowledge_item(item_id: int, req: KnowledgeUpdateReq):
-    title = req.title.strip()
-    category = req.category.strip()
-    summary = req.summary.strip()
+        raise HTTPException(400, "不支持的知识状态")
+    if len(title) > 200:
+        raise HTTPException(400, "标题不能超过 200 个字符")
+    if len(category) > 50:
+        raise HTTPException(400, "分类不能超过 50 个字符")
+    if len(summary) > 5000:
+        raise HTTPException(400, "摘要不能超过 5000 个字符")
     tags = []
     for raw_tag in req.tags:
         tag = raw_tag.strip()
         if tag and tag not in tags:
             tags.append(tag)
-    allowed_statuses = {"unread", "read", "used", "favorite", "expired"}
-    if not title:
-        raise HTTPException(400, "标题不能为空")
-    if len(title) > 200:
-        raise HTTPException(400, "标题不能超过 200 个字符")
+    if len(tags) > 20:
+        raise HTTPException(400, "标签不能超过 20 个")
+    if not db.update_knowledge_item(item_id, title, category, summary, tags, req.status):
+        raise HTTPException(404, "知识条目不存在")
+    return {"ok": True, "item": db.get_knowledge_item(item_id)}
+
+
+class KnowledgeBulkReq(BaseModel):
+    ids: list[int] = []
+    status: str = ""
+    category: str = ""
+
+
+@app.post("/api/knowledge/bulk/status")
+def bulk_knowledge_status(req: KnowledgeBulkReq):
+    if not req.ids:
+        raise HTTPException(400, "请选择至少一条知识")
+    if req.status not in KNOWLEDGE_STATUSES:
+        raise HTTPException(400, "不支持的知识状态")
+    n = db.set_knowledge_status(req.ids, req.status)
+    return {"ok": True, "updated": n}
+
+
+@app.post("/api/knowledge/bulk/category")
+def bulk_knowledge_category(req: KnowledgeBulkReq):
+    if not req.ids:
+        raise HTTPException(400, "请选择至少一条知识")
+    category = req.category.strip()
     if not category:
         raise HTTPException(400, "分类不能为空")
     if len(category) > 50:
         raise HTTPException(400, "分类不能超过 50 个字符")
-    if len(summary) > 5000:
-        raise HTTPException(400, "摘要不能超过 5000 个字符")
-    if len(tags) > 20:
-        raise HTTPException(400, "标签不能超过 20 个")
-    if req.status not in allowed_statuses:
-        raise HTTPException(400, "不支持的知识状态")
-    if not db.update_knowledge_item(item_id, title, category, summary, tags, req.status):
-        raise HTTPException(404, "知识条目不存在")
-    return {"ok": True, "item": db.get_knowledge_item(item_id)}
+    n = db.set_knowledge_category(req.ids, category)
+    return {"ok": True, "updated": n}
+
+
+@app.post("/api/knowledge/bulk/delete")
+def bulk_knowledge_delete(req: KnowledgeBulkReq):
+    if not req.ids:
+        raise HTTPException(400, "请选择至少一条知识")
+    n = db.delete_knowledge_items(req.ids)
+    return {"ok": True, "deleted": n}
+
+
+def _knowledge_markdown(items):
+    status_label = {"unread": "未读", "read": "已读", "used": "已用",
+                    "starred": "收藏", "expired": "失效"}
+    lines = ["# QChat Lens 知识库导出", ""]
+    lines.append(f"共 {len(items)} 条知识，导出于 "
+                 f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+    for item in items:
+        lines.append(f"## {item['title'] or item['domain']}")
+        lines.append("")
+        lines.append(f"- 链接：{item['url']}")
+        lines.append(f"- 分类：{item['category']}")
+        if item.get("tags"):
+            lines.append(f"- 标签：{'、'.join(item['tags'])}")
+        lines.append(f"- 状态：{status_label.get(item.get('status'), item.get('status', ''))}")
+        lines.append(f"- 来源次数：{len(item.get('sources') or [])}")
+        if item.get("summary"):
+            lines.append("")
+            lines.append(item["summary"])
+        sources = item.get("sources") or []
+        if sources:
+            lines.append("")
+            lines.append("<details><summary>来源记录</summary>")
+            lines.append("")
+            for s in sources:
+                ts = time.strftime("%Y-%m-%d %H:%M",
+                                   time.localtime((s.get("ts") or 0) / 1000))
+                quote = (s.get("quote") or "").replace("\n", " ")
+                lines.append(f"- {s.get('sender_name') or '未知'} · {ts}：{quote}")
+            lines.append("")
+            lines.append("</details>")
+        lines.append("")
+    return "\n".join(lines)
 
 
 # ---------- 资源（图片/文件） ----------

@@ -1225,6 +1225,11 @@
 .inbox-notice { border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); color: var(--muted); font-size: 12px; }
 .inbox-notice button { margin-left: auto; color: var(--faint); font-size: 11px; }
 .inbox-bulk span { margin-right: auto; font-size: 12px; color: var(--muted); }
+.inbox-bulk .bulk-warn { color: var(--orange); font-size: 12px; }
+.inbox-bulk .bulk-input {
+  flex: 1; min-width: 140px; max-width: 260px;
+  padding: 6px 10px; font-size: 12px;
+}
 .inbox-workspace {
   max-width: 1180px;
   margin: 0 auto;
@@ -1311,10 +1316,16 @@
   border-color: #fff;
 }
 
-.knowledge-status-bar { margin-top: -6px; }
+.knowledge-status-bar { margin-top: -2px; }
+.knowledge-status-bar .inbox-filters { align-items: center; }
 .knowledge-status-bar .inbox-filters button {
   display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius-sm);
 }
+.knowledge-select-all { flex: none; white-space: nowrap; }
+
+.inbox-card.is-checked { border-color: var(--line-strong); background: var(--raised); }
+.inbox-detail-backdrop { display: none; }
 .knowledge-status-bar .inbox-filters button em {
   font-style: normal; color: var(--faint); font-family: var(--mono); font-size: 10px;
 }
@@ -1359,15 +1370,25 @@
 }
 @media (max-width: 900px) {
   .inbox-workspace { display: block; }
-  .inbox-detail { position: fixed; z-index: 50; inset: 12px 12px 12px auto; width: min(390px, calc(100vw - 100px)); height: auto; }
+  .inbox-detail { position: fixed; z-index: 60; inset: 12px 12px 12px auto; width: min(390px, calc(100vw - 100px)); height: auto; }
+  .inbox-detail-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 55;
+    background: rgba(6, 8, 12, .28);
+    -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  }
 }
 @media (max-width: 680px) {
-  .inbox-view { padding: 28px 16px 44px; }
+  .inbox-view, .knowledge-view { padding: 28px 16px 44px; }
   .inbox-head { align-items: flex-end; }
   .inbox-toolbar { align-items: stretch; flex-direction: column; }
   .inbox-search { width: 100%; }
+  .inbox-tools { flex-wrap: wrap; }
+  .knowledge-status-bar { align-items: stretch; }
+  .knowledge-select-all { align-self: flex-start; }
   .inbox-detail { inset: 8px; width: auto; }
   .inbox-source-line { flex-direction: column; gap: 3px; }
   .inbox-actions { flex-wrap: wrap; }
   .inbox-source-action { width: 100%; margin-left: 0; text-align: left; }
 }
+
+.app[data-theme='light'] .inbox-detail-backdrop { background: rgba(35,40,52,.18); }

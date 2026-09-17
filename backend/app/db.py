@@ -679,6 +679,71 @@ class DB:
                 (item_id, limit)).fetchall()
         return [dict(r) for r in rows]
 
+    def set_knowledge_status(self, item_ids, status):
+        """批量更新知识条目状态，返回实际更新的条数。"""
+        ids = [int(i) for i in item_ids]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            cur = c.execute(
+                f"UPDATE knowledge_items SET status=?, updated_at=?"
+                f" WHERE id IN ({placeholders})",
+                (status, now, *ids))
+            return cur.rowcount
+
+    def set_knowledge_category(self, item_ids, category):
+        ids = [int(i) for i in item_ids]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        now = int(time.time() * 1000)
+        with self.conn() as c:
+            cur = c.execute(
+                f"UPDATE knowledge_items SET category=?, updated_at=?"
+                f" WHERE id IN ({placeholders})",
+                (category, now, *ids))
+            return cur.rowcount
+
+    def delete_knowledge_items(self, item_ids):
+        """删除知识条目。原始消息与来源记录保留，仅解除收录。"""
+        ids = [int(i) for i in item_ids]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        with self.conn() as c:
+            c.execute(
+                f"UPDATE knowledge_sources SET knowledge_item_id=NULL"
+                f" WHERE knowledge_item_id IN ({placeholders})", ids)
+            cur = c.execute(
+                f"DELETE FROM knowledge_items WHERE id IN ({placeholders})", ids)
+            return cur.rowcount
+
+    def export_knowledge_items(self, item_ids=None):
+        """导出知识条目（含来源）。不传 item_ids 则导出全部。"""
+        with self.conn() as c:
+            if item_ids:
+                ids = [int(i) for i in item_ids]
+                placeholders = ",".join("?" for _ in ids)
+                rows = c.execute(
+                    f"SELECT * FROM knowledge_items WHERE id IN ({placeholders})"
+                    f" ORDER BY created_at DESC", ids).fetchall()
+            else:
+                rows = c.execute(
+                    "SELECT * FROM knowledge_items ORDER BY created_at DESC").fetchall()
+            out = []
+            for r in rows:
+                item = dict(r)
+                item["tags"] = json.loads(item.get("tags") or "[]")
+                src = c.execute(
+                    "SELECT sender_name, session_id, url, ts, quote"
+                    " FROM knowledge_sources WHERE knowledge_item_id=?"
+                    " ORDER BY ts DESC", (item["id"],)).fetchall()
+                item["sources"] = [dict(s) for s in src]
+                out.append(item)
+        return out
+
     # ---------- 资源 ----------
 
     def clear_resources(self, session_id=None):

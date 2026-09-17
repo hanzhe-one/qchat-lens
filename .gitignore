@@ -37,3 +37,10 @@ smoke_*.py
 
 # Local UI checks and temporary work files
 /work/
+
+# 本地运行日志
+backend.out.log
+backend.err.log
+frontend.out.log
+*.out.log
+*.err.log
