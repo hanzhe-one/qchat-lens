@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post, patch, fmtTs } from '../api'
 
-const FILTERS = ['全部', '公益站', '中转站', 'AI 工具', '待确认']
+// 分类按钮由实际数据动态生成，见下方 filters；这里只保留两个固定入口。
+const BASE_FILTER = '全部'
+const UNCERTAIN_FILTER = '待确认'
 
 function statusLabel(item) {
   if (item.status === 'later') return '稍后处理'
@@ -12,14 +14,14 @@ function statusLabel(item) {
 }
 
 function matchesFilter(item, filter) {
-  if (filter === '全部') return true
-  if (filter === '待确认') return item.category === '其他链接' || item.confidence < 72
+  if (filter === BASE_FILTER) return true
+  if (filter === UNCERTAIN_FILTER) return item.category === '其他链接' || item.confidence < 72
   return item.category === filter
 }
 
 export default function InboxView({ onOpenSource, onCountChange }) {
   const [items, setItems] = useState([])
-  const [filter, setFilter] = useState('全部')
+  const [filter, setFilter] = useState(BASE_FILTER)
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(0)
   const [checked, setChecked] = useState([])
@@ -69,6 +71,13 @@ export default function InboxView({ onOpenSource, onCountChange }) {
   useEffect(() => {
     if (!selectedId && items.length > 0) setSelectedId(items[0].id)
   }, [items, selectedId])
+
+  // 分类按钮来自实际扫描结果，而不是预设清单——换一套分类配置即换一套按钮。
+  const filters = useMemo(() => {
+    const set = new Set()
+    items.forEach((item) => { if (item.category) set.add(item.category) })
+    return [BASE_FILTER, ...set, UNCERTAIN_FILTER]
+  }, [items])
 
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -126,7 +135,7 @@ export default function InboxView({ onOpenSource, onCountChange }) {
 
       <div className="inbox-toolbar">
         <div className="inbox-filters" aria-label="收集箱筛选">
-          {FILTERS.map((name) => (
+          {filters.map((name) => (
             <button key={name} className={filter === name ? 'active' : ''} onClick={() => setFilter(name)}>{name}</button>
           ))}
         </div>

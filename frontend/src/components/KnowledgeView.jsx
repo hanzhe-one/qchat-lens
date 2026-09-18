@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, patch, post, fmtTs } from '../api'
 
-const FILTERS = ['全部', '公益站', '中转站', 'AI 工具', '技术文章', '其他链接']
+// 分类按钮由实际数据生成（见 categories），不预设任何分类。
+const BASE_FILTER = '全部'
 
 const STATUSES = [
   { id: '', name: '全部状态' },
@@ -24,7 +25,7 @@ const STATUS_OPTIONS = STATUSES.filter((s) => s.id)
 
 export default function KnowledgeView({ onOpenSource, onCountChange }) {
   const [items, setItems] = useState([])
-  const [filter, setFilter] = useState('全部')
+  const [filter, setFilter] = useState(BASE_FILTER)
   const [statusFilter, setStatusFilter] = useState('')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(0)
@@ -68,7 +69,7 @@ export default function KnowledgeView({ onOpenSource, onCountChange }) {
   const selected = selectedId ? items.find((item) => item.id === selectedId) || null : null
 
   const categories = useMemo(() => {
-    const set = new Set(FILTERS.filter((f) => f !== '全部'))
+    const set = new Set()
     items.forEach((item) => { if (item.category) set.add(item.category) })
     return [...set]
   }, [items])
@@ -84,7 +85,7 @@ export default function KnowledgeView({ onOpenSource, onCountChange }) {
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return items.filter((item) => {
-      const matchedFilter = filter === '全部' || item.category === filter
+      const matchedFilter = filter === BASE_FILTER || item.category === filter
       if (!matchedFilter) return false
       if (statusFilter && item.status !== statusFilter) return false
       if (!needle) return true
@@ -263,7 +264,7 @@ export default function KnowledgeView({ onOpenSource, onCountChange }) {
 
       <div className="inbox-toolbar">
         <div className="inbox-filters">
-          {FILTERS.map((item) => (
+          {[BASE_FILTER, ...categories].map((item) => (
             <button
               key={item}
               className={filter === item ? 'active' : ''}
@@ -448,7 +449,7 @@ export default function KnowledgeView({ onOpenSource, onCountChange }) {
                         list="knowledge-categories"
                         value={form.category}
                         onChange={(e) => setForm({ ...form, category: e.target.value })}
-                        placeholder="例如：公益站"
+                        placeholder="例如：工具"
                       />
                       <datalist id="knowledge-categories">
                         {categories.map((c) => <option key={c} value={c} />)}

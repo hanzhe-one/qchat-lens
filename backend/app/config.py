@@ -38,6 +38,21 @@ DEFAULTS = {
         "private": [],
         "groups": [],
     },
+    # 收集箱的链接分类规则：按顺序匹配，命中第一条即归类。
+    # keywords 为小写子串匹配。这里只放通用示例——请按自己的需要在
+    # config.json 里改成你真正关心的分类，仓库里的默认值不携带任何个人偏好。
+    "inbox": {
+        "categories": [
+            {"name": "工具", "keywords": ["工具", "tool", "software", "app", "插件"],
+             "tags": ["工具"]},
+            {"name": "文档教程", "keywords": ["教程", "文档", "docs", "blog", "article", "文章", "guide", "指南"],
+             "tags": ["文档"]},
+            {"name": "资源分享", "keywords": ["资源", "分享", "下载", "免费", "free"],
+             "tags": ["资源"]},
+            {"name": "项目仓库", "keywords": ["github", "gitlab", "gitee", "开源", "repo", "project"],
+             "tags": ["项目"]},
+        ],
+    },
 }
 
 

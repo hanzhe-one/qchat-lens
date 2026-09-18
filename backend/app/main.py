@@ -216,7 +216,8 @@ def list_inbox(status: str = "active", limit: int = Query(500, le=2000)):
 
 @app.post("/api/inbox/scan")
 def scan_inbox(req: InboxScanReq):
-    result = inbox_mod.scan_inbox(db, session_id=req.session_id or None, limit=req.limit)
+    result = inbox_mod.scan_inbox(db, session_id=req.session_id or None, limit=req.limit,
+                                  inbox_cfg=CONFIG.get("inbox"))
     return {"ok": True, "result": result}
 
 

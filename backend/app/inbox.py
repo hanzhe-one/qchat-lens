@@ -50,29 +50,52 @@ def _summary(text, url, domain):
     return cleaned[:180] + ("…" if len(cleaned) > 180 else "")
 
 
-def classify(text, url, label=""):
+FALLBACK_CATEGORY = "其他链接"
+
+# 仅在配置里没有 categories 时使用的兜底规则，故意保持通用。
+DEFAULT_RULES = [
+    ("工具", ["工具", "tool", "software", "app", "插件"], ["工具"]),
+    ("文档教程", ["教程", "文档", "docs", "blog", "article", "文章", "guide", "指南"], ["文档"]),
+    ("资源分享", ["资源", "分享", "下载", "免费", "free"], ["资源"]),
+    ("项目仓库", ["github", "gitlab", "gitee", "开源", "repo", "project"], ["项目"]),
+]
+
+
+def build_rules(inbox_cfg):
+    """把配置里的 categories 转成 (name, keywords, tags) 列表。
+
+    分类完全由使用者自己的配置决定，代码不预设任何特定领域。
+    配置缺失或为空时退回 DEFAULT_RULES。
+    """
+    raw = (inbox_cfg or {}).get("categories")
+    if not raw:
+        return DEFAULT_RULES
+    rules = []
+    for item in raw:
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        keywords = [str(k).lower() for k in (item.get("keywords") or []) if str(k).strip()]
+        tags = [str(t) for t in (item.get("tags") or []) if str(t).strip()]
+        rules.append((name, keywords, tags))
+    return rules or DEFAULT_RULES
+
+
+def classify(text, url, label="", rules=None):
     lower = (text or "").lower()
     domain = _domain(url)
+    rules = DEFAULT_RULES if rules is None else rules
 
-    public_hits = [k for k in ("公益", "免费", "白嫖", "送额度", "羊毛") if k in lower]
-    relay_hits = [k for k in ("中转", "relay", "one-api", "new-api", "openai", "api", "接口", "key", "额度") if k in lower]
-    ai_hits = [k for k in ("ai", "prompt", "chatgpt", "claude", "gemini", "工具") if k in lower]
-    article_hits = [k for k in ("blog", "docs", "article", "文章", "教程", "github") if k in lower]
-
-    if public_hits:
-        category, tags = "公益站", ["免费", "公益"]
-    elif relay_hits:
-        category, tags = "中转站", ["API", "中转"]
-    elif ai_hits:
-        category, tags = "AI 工具", ["AI"]
-    elif article_hits:
-        category, tags = "技术文章", ["文章"]
-    else:
-        category, tags = "其他链接", ["待分类"]
+    category, tags, hits = FALLBACK_CATEGORY, ["待分类"], 0
+    for name, keywords, rule_tags in rules:
+        matched = [k for k in keywords if k in lower]
+        if matched:
+            category, tags, hits = name, (rule_tags or ["待分类"]), len(matched)
+            break
 
     confidence = 65
     confidence += 8 if label else 0
-    confidence += min(4 * sum(len(x) for x in (public_hits, relay_hits, ai_hits, article_hits)), 24)
+    confidence += min(4 * hits, 24)
     confidence = min(confidence, 94)
 
     status = "pending"
@@ -89,7 +112,8 @@ def classify(text, url, label=""):
     }
 
 
-def scan_inbox(db, session_id=None, limit=10000):
+def scan_inbox(db, session_id=None, limit=10000, inbox_cfg=None):
+    rules = build_rules(inbox_cfg)
     messages = db.list_link_messages(session_id=session_id, limit=limit)
     candidate_ids = set()
     source_count = 0
@@ -98,7 +122,7 @@ def scan_inbox(db, session_id=None, limit=10000):
         for link in extract_links(text):
             url = link["url"]
             domain = _domain(url)
-            info = classify(text, url, link.get("label", ""))
+            info = classify(text, url, link.get("label", ""), rules)
             rec = {
                 "session_id": msg["session_id"],
                 "message_id": msg["id"],

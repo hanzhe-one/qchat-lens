@@ -14,5 +14,13 @@
   "whitelist": {
     "private": [],
     "groups": []
+  },
+  "inbox": {
+    "categories": [
+      {"name": "工具", "keywords": ["工具", "tool", "software", "app"], "tags": ["工具"]},
+      {"name": "文档教程", "keywords": ["教程", "文档", "docs", "blog", "article"], "tags": ["文档"]},
+      {"name": "资源分享", "keywords": ["资源", "分享", "下载", "免费"], "tags": ["资源"]},
+      {"name": "项目仓库", "keywords": ["github", "gitee", "开源", "repo"], "tags": ["项目"]}
+    ]
   }
 }
