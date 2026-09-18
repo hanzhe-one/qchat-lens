@@ -403,6 +403,19 @@ class DB:
                  topic.get("msg_count", 0), topic.get("status", "open"), now))
             return cur.lastrowid
 
+    def delete_topics(self, session_id, only_open=True, msg_lo=None, msg_hi=None):
+        """删除专题。only_open=True 时保留人工归档(status=archived)的专题。
+        给定 msg_lo/msg_hi 时只删与该区间重叠的专题（用于局部重建）。返回删除条数。"""
+        sql = "DELETE FROM topics WHERE session_id=?"
+        args = [session_id]
+        if only_open:
+            sql += " AND status='open'"
+        if msg_lo is not None and msg_hi is not None:
+            sql += " AND msg_min_id<=? AND msg_max_id>=?"
+            args += [msg_hi, msg_lo]
+        with self.conn() as c:
+            return c.execute(sql, args).rowcount
+
     def list_topics(self, session_id=None):
         sql = "SELECT * FROM topics"
         args = []

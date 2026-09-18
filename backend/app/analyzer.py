@@ -81,7 +81,11 @@ class Analyzer:
     # ------- 专题 -------
     def build_topics(self, session_id, msg_lo=None, msg_hi=None, chunk=120,
                      progress=None):
-        """对一段区间消息做专题归纳。自动切片避免单次输出过长。"""
+        """对一段区间消息做专题归纳，重建该区间专题（先清后写）。
+
+        自动切片避免单次输出过长。旧专题只在至少一个切片解析成功后才清除，
+        因此 LLM 整体失败时不会丢失已归纳的专题。人工归档的专题始终保留。
+        """
         if not self.ready():
             raise RuntimeError("LLM 未配置")
         s = self.db.get_session(session_id)
@@ -94,7 +98,8 @@ class Analyzer:
         if not rows:
             return 0
         base, key, model = self._llm()
-        total_added = 0
+        pending = []          # 收集本轮的专题，全部切片跑完再落库
+        ok_chunks = 0
         # 按时间顺序切成 chunk 大小的连续块（用 id 跨度切）
         chunks = []
         cur = []
@@ -124,29 +129,42 @@ class Analyzer:
                 self.db.log_analysis("topic", session_id, seg[0]["id"],
                                      seg[-1]["id"], len(seg), "error", str(last_err))
                 continue
+            ok_chunks += 1
             valid_ids = {r["id"] for r in seg}
-            with self._lock:
-                for t in out.get("topics", []):
-                    s_id, e_id = t.get("start_id"), t.get("end_id")
-                    if not s_id or not e_id:
-                        continue
-                    if s_id not in valid_ids or e_id not in valid_ids:
-                        continue
-                    if e_id < s_id:
-                        continue
-                    span = [r for r in seg if s_id <= r["id"] <= e_id]
-                    if not span:
-                        continue
-                    self.db.add_topic({
-                        "session_id": session_id,
-                        "title": (t.get("title") or "未命名")[:120],
-                        "summary": (t.get("summary") or "")[:800],
-                        "tags": t.get("tags", [])[:10],
-                        "start_ts": span[0]["ts"], "end_ts": span[-1]["ts"],
-                        "msg_min_id": s_id, "msg_max_id": e_id,
-                        "msg_count": len(span),
-                    })
-                    total_added += 1
+            for t in out.get("topics", []):
+                s_id, e_id = t.get("start_id"), t.get("end_id")
+                if not s_id or not e_id:
+                    continue
+                if s_id not in valid_ids or e_id not in valid_ids:
+                    continue
+                if e_id < s_id:
+                    continue
+                span = [r for r in seg if s_id <= r["id"] <= e_id]
+                if not span:
+                    continue
+                pending.append({
+                    "session_id": session_id,
+                    "title": (t.get("title") or "未命名")[:120],
+                    "summary": (t.get("summary") or "")[:800],
+                    "tags": t.get("tags", [])[:10],
+                    "start_ts": span[0]["ts"], "end_ts": span[-1]["ts"],
+                    "msg_min_id": s_id, "msg_max_id": e_id,
+                    "msg_count": len(span),
+                })
             if progress:
                 progress(ci + 1, len(chunks))
-        return total_added
+
+        if not ok_chunks:
+            # 全部切片失败：保留旧专题，不执行清除
+            return 0
+
+        with self._lock:
+            removed = self.db.delete_topics(
+                session_id, only_open=True,
+                msg_lo=rows[0]["id"] if msg_lo is not None else None,
+                msg_hi=rows[-1]["id"] if msg_hi is not None else None)
+            for t in pending:
+                self.db.add_topic(t)
+            self.db.log_analysis("topic", session_id, rows[0]["id"], rows[-1]["id"],
+                                 len(rows), "ok", f"重建专题 {len(pending)} 个，清除旧专题 {removed} 个")
+        return len(pending)
