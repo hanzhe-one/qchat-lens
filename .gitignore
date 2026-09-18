@@ -29,6 +29,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# 工具本地设置（含本机私有配置，不入库）
+.claude/
+
 # 调试文件
 probe_*.py
 run_*.py
