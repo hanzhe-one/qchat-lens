@@ -3,6 +3,18 @@
 > 起点：2026-09-18（周五） ｜ 节奏：每天 30 分钟 ｜ 预计终点：2026-10-01
 > 原则：每步**独立验收、独立提交**；当天做不完只交「最小可验收」部分，余量顺延到次日，不合并。
 
+## 基线说明（2026-09-18 更新）
+
+本路线图最初基于 09-06 的本地代码制定。执行 Day 1 时发现：**本地 clone 落后远端 6 个提交**，
+另有 09-11 ~ 09-17 的开发（作者 Xiao Zhe）加入了「Agent 收集箱 + 全部知识」两大功能：
+
+- 新增表 `agent_candidates` / `knowledge_items` / `knowledge_sources`
+- 新增 `backend/app/inbox.py`、前端 `InboxView.jsx` / `KnowledgeView.jsx`
+- 新增约 15 个 API（`/api/inbox/*`、`/api/knowledge/*`）
+
+Day 1 的修复已 rebase 到最新代码之上并重新验证。**Day 2 起的目标需要对照新代码重新确认**
+（原计划中的「知识沉淀」缺口可能已被 knowledge_items 部分覆盖，见 Day 2 备注）。
+
 ## 一、总目标
 
 把代码 review 发现的问题按 **P0 → P3** 逐日修掉，让项目核心（**原文不可变 + AI 结果可重建**）真正自洽：
@@ -26,7 +38,7 @@
 
 | Day | 日期 | 主题 | 优先级 | 状态 |
 |---|---|---|---|---|
-| 1 | 09-18 五 | 换密钥 + 专题先清后建 | P0 | ☐ |
+| 1 | 09-18 五 | 换密钥 + 专题先清后建 | P0 | ✅ 代码完成（密钥待你轮换） |
 | 2 | 09-19 六 | 摘要/待办/事实落库（schema + 写入） | P0 | ☐ |
 | 3 | 09-20 日 | 摘要展示（API + 前端） | P0 | ☐ |
 | 4 | 09-21 一 | 标签消息级化（prompt + 写回） | P1 | ☐ |
@@ -62,6 +74,10 @@
   ```
 
 ### Day 2 · 09-19（周六）— 摘要 / 待办 / 关键事实落库（1/2）
+
+> **先做核对**：远端新增的 `knowledge_items` 只覆盖「链接型知识」（url/title/summary），
+> 与本节要存的「消息批次摘要」不是一回事 —— 摘要仍无处存放，本日任务依然成立。
+> 但落库前先确认是否应挂到现有的 agent/knowledge 体系上，避免又造一张平行的表。
 
 - 现状：`llm.py` 让模型输出 `digest / action_items / key_facts`，但 `analyze_window` **只写了 tags，其余全丢**。
 - `db.py`：新增 `message_digests` 表（`session_id, msg_lo, msg_hi, digest, action_items JSON, key_facts JSON, created_at`）。
