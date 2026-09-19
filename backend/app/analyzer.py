@@ -8,6 +8,21 @@ from .llm import DIGEST_SYSTEM, TOPIC_SYSTEM, MERGE_SYSTEM
 BATCH = 80           # 每批分析的消息数（减小以降低单次输出超长断连风险）
 TOPIC_EVERY_BATCHES = 3  # 每 N 批后重新归纳一次专题
 MAX_RETRY = 3
+MAX_TAGS_PER_MSG = 6     # 单条消息最多保留的标签数
+
+
+def _clean_tags(raw, limit=MAX_TAGS_PER_MSG):
+    """规整 LLM 返回的标签：转字符串、去空白、去重、限长、限量。"""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out = []
+    for t in raw:
+        s = str(t).strip()[:40]
+        if s and s not in out:
+            out.append(s)
+        if len(out) >= limit:
+            break
+    return out
 
 
 class Analyzer:
@@ -50,12 +65,28 @@ class Analyzer:
                 time.sleep(2 * (attempt + 1))
         if out is None:
             raise RuntimeError(f"LLM 分析失败(重试{MAX_RETRY}次): {last_err}")
-        tags = out.get("tags", [])
+        batch_tags = _clean_tags(out.get("tags", []))
         lo, hi = rows[0]["id"], rows[-1]["id"]
+        valid_ids = {r["id"] for r in rows}
+        # 逐条标签：把 items 里的 id→tags 收成映射，只接受本批真实存在的 id。
+        per_msg = {}
+        for it in (out.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            mid = it.get("id")
+            if mid in valid_ids:
+                mt = _clean_tags(it.get("tags", []))
+                if mt:
+                    per_msg[mid] = mt
         with self._lock:
             for r in rows:
+                # 消息级标签优先；模型漏标的消息退回批次级标签，保证仍可检索。
+                tags = per_msg.get(r["id"]) or batch_tags
                 self.db.set_message_tags(r["id"], tags, source="auto")
                 self.db.upsert_message_analyzed(r["id"], 1)
+            # 摘要用的标签：全批实际用到的标签并集（含批次级兜底）。
+            union = list(dict.fromkeys(
+                [t for ts in per_msg.values() for t in ts] + batch_tags))
             # 保存这批的摘要/待办/关键事实——LLM 已经算出来，不再丢弃。
             # 先清掉与本区间重叠的旧摘要，避免重新分析时堆叠。
             self.db.delete_digests_in_range(session_id, lo, hi)
@@ -65,7 +96,7 @@ class Analyzer:
                 "digest": (out.get("digest") or "")[:2000],
                 "action_items": [str(x)[:300] for x in (out.get("action_items") or [])][:20],
                 "key_facts": [str(x)[:300] for x in (out.get("key_facts") or [])][:20],
-                "tags": tags,
+                "tags": union[:20],
             })
             self.db.log_analysis("session", session_id, lo, hi, len(rows), "ok")
         return len(rows)
