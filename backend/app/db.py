@@ -180,6 +180,7 @@ class DB:
         c = sqlite3.connect(self.path, timeout=30)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA foreign_keys=ON")  # 外键是每连接开关，默认关；不开则 CASCADE 失效
         try:
             yield c
             c.commit()

@@ -336,7 +336,9 @@ def update_knowledge_item(item_id: int, req: KnowledgeUpdateReq):
             tags.append(tag)
     if len(tags) > 20:
         raise HTTPException(400, "标签不能超过 20 个")
-    if not db.update_knowledge_item(item_id, title, category, summary, tags, req.status):
+    # 用校验后的 status（带兜底），而不是原始 req.status——否则不带该字段的
+    # PATCH 会把状态覆盖成空串。
+    if not db.update_knowledge_item(item_id, title, category, summary, tags, status):
         raise HTTPException(404, "知识条目不存在")
     return {"ok": True, "item": db.get_knowledge_item(item_id)}
 
