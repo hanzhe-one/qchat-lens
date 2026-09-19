@@ -47,10 +47,11 @@ export default function DashView({ session, onExplore, onGoto }) {
 
   useEffect(() => { load() }, [session.id])
 
-  const startAnalyze = async () => {
+  const startAnalyze = async (reset = false) => {
+    if (reset && !window.confirm('重新分析会清空本会话的自动标签与摘要，用最新方式重建（人工标签保留）。继续？')) return
     setBusy(true)
     try {
-      await post('/api/analyze', { session_id: session.id, build_topics: true })
+      await post('/api/analyze', { session_id: session.id, build_topics: true, reset })
       poll()
     } catch (e) { alert('分析失败: ' + e.message); setBusy(false) }
   }
@@ -106,9 +107,11 @@ export default function DashView({ session, onExplore, onGoto }) {
               {session.kind === 'group' ? '群聊' : '私聊'} · {fmtTsDate(st.first_ts)} → {fmtTsDate(st.last_ts)}
             </div>
             <div className="hero-actions">
-              <button className="btn-accent" onClick={startAnalyze} disabled={busy || (live && live.running)}>
+              <button className="btn-accent" onClick={() => startAnalyze(false)} disabled={busy || (live && live.running)}>
                 {busy || (live && live.running) ? <span className="spin" /> : '▶ 分析 / 重建专题'}
               </button>
+              <button className="btn-ghost" onClick={() => startAnalyze(true)} disabled={busy || (live && live.running)}
+                      title="清空自动标签与摘要，用最新方式重建（人工标签保留）">重新分析</button>
               <button className="btn-ghost" onClick={() => go({ kind: 'all' })}>消息</button>
               <button className="btn-ghost" onClick={() => onGoto('topics')}>专题</button>
             </div>

@@ -254,6 +254,18 @@ class DB:
         with self.conn() as c:
             c.execute("UPDATE messages SET analyzed=? WHERE id=?", (analyzed, msg_id))
 
+    def reset_analyzed(self, session_id):
+        """把会话所有消息标记为未分析，并清掉自动标签（保留人工标签）。
+        供「重新分析」用旧数据重建：重跑时会用新的消息级 prompt 覆盖。返回清零条数。"""
+        with self.conn() as c:
+            c.execute(
+                "DELETE FROM message_tags WHERE source='auto' AND message_id IN"
+                " (SELECT id FROM messages WHERE session_id=?)", (session_id,))
+            n = c.execute("UPDATE messages SET analyzed=0 WHERE session_id=?",
+                          (session_id,)).rowcount
+        self._recount_tags()
+        return n
+
     # kind: link|image|file|voice|video|all；返回 (sql_fragment, args)
     def _kind_sql(self, kind, prefix="m."):
         if not kind or kind == "all":
@@ -299,19 +311,56 @@ class DB:
 
     def list_messages(self, session_id, after_id=0, limit=200, tag=None, q=None,
                       kind=None, ts_from=None, ts_to=None):
-        """kind: link|image|file|voice|video|all。ts_from/ts_to 毫秒，含边界。"""
+        """kind: link|image|file|voice|video|all。ts_from/ts_to 毫秒，含边界。
+
+        标签/资源一次性批量取（按消息 id JOIN），避免每条消息各查一次的 N+1。
+        """
         sql, args = self._base_where(session_id, tag, q, kind, ts_from, ts_to)
         sql += " AND m.id>? ORDER BY m.id LIMIT ?"
         args += [after_id, limit]
         with self.conn() as c:
             rows = c.execute(f"SELECT m.* FROM messages m{sql}", args).fetchall()
+            ids = [r["id"] for r in rows]
+            tags_map = self._tags_for(c, ids)
+            res_map = self._resources_for(c, ids)
         out = []
         for r in rows:
             m = dict(r)
             m["raw"] = json.loads(m["raw"])
-            m["tags"] = self.message_tags(m["id"])
-            m["resources"] = self.message_resources(m["id"])
+            m["tags"] = tags_map.get(m["id"], [])
+            m["resources"] = res_map.get(m["id"], [])
             out.append(m)
+        return out
+
+    @staticmethod
+    def _chunks(ids, size=900):
+        # SQLite 默认变量上限约 999，分块避免超限（build_topics 可传上万条）。
+        for i in range(0, len(ids), size):
+            yield ids[i:i + size]
+
+    def _tags_for(self, c, ids):
+        """一次(分块)查回 {message_id: [tag_name,...]}。"""
+        out = {}
+        for chunk in self._chunks(ids):
+            ph = ",".join("?" * len(chunk))
+            rows = c.execute(
+                "SELECT mt.message_id mid, t.name FROM message_tags mt"
+                " JOIN tags t ON t.id=mt.tag_id"
+                f" WHERE mt.message_id IN ({ph})", chunk).fetchall()
+            for r in rows:
+                out.setdefault(r["mid"], []).append(r["name"])
+        return out
+
+    def _resources_for(self, c, ids):
+        """一次(分块)查回 {message_id: [resource_dict,...]}。"""
+        out = {}
+        for chunk in self._chunks(ids):
+            ph = ",".join("?" * len(chunk))
+            rows = c.execute(
+                f"SELECT * FROM resources WHERE message_id IN ({ph}) ORDER BY id",
+                chunk).fetchall()
+            for r in rows:
+                out.setdefault(r["message_id"], []).append(dict(r))
         return out
 
     def get_message(self, msg_id):

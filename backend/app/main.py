@@ -519,6 +519,7 @@ def archive_topic(topic_id: int, archived: bool = True):
 class AnalyzeReq(BaseModel):
     session_id: str
     build_topics: bool = True
+    reset: bool = False   # True=先把整会话标记为未分析，用新 prompt 重建旧数据
 
 
 @app.post("/api/analyze")
@@ -533,6 +534,8 @@ def analyze_session(req: AnalyzeReq):
     def run():
         analysis_state.update(running=True, session_id=req.session_id, done=0, error=None)
         try:
+            if req.reset:
+                db.reset_analyzed(req.session_id)
             n = analyzer.analyze_until_caught_up(
                 req.session_id,
                 progress=lambda k, v: analysis_state.update(done=v))
