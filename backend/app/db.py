@@ -627,6 +627,9 @@ class DB:
         if session_id:
             sql += " AND m.session_id=?"
             args.append(session_id)
+        else:
+            # 全库扫描时只扫未隐藏会话，避免把隐藏(如误入的群聊)链接扫进收集箱。
+            sql += " AND s.hidden=0"
         sql += " ORDER BY m.id LIMIT ?"
         args.append(limit)
         with self.conn() as c:
