@@ -25,7 +25,18 @@ export default function TimelineView({ session, filter, onFilter }) {
 function MsgDetail({ msg, tags, onPickTag, onClose }) {
   const [editing, setEditing] = useState(false)
   const [tagText, setTagText] = useState('')
+  const [digest, setDigest] = useState(null)
   const mine = msg.direction === 'out'
+
+  // 拉取该消息所属批次的摘要/待办/关键事实
+  useEffect(() => {
+    let alive = true
+    setDigest(null)
+    get(`/api/messages/${msg.id}`)
+      .then((d) => { if (alive) setDigest(d.digest || null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [msg.id])
 
   const addTag = async (name) => {
     try {
@@ -53,6 +64,25 @@ function MsgDetail({ msg, tags, onPickTag, onClose }) {
       <div className="dd-card">
         <MsgContent text={msg.text} resources={msg.resources} size="lg" />
       </div>
+
+      {digest && (digest.digest || digest.action_items?.length || digest.key_facts?.length) && (
+        <div className="dd-card">
+          <div className="dd-sec-title">本段摘要 <span className="faint" style={{ fontWeight: 400, fontSize: 10.5 }}>· AI 对这批消息的归纳</span></div>
+          {digest.digest && <div style={{ fontSize: 12.5, lineHeight: 1.6, marginTop: 4 }}>{digest.digest}</div>}
+          {digest.action_items?.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div className="faint" style={{ fontSize: 10.5, marginBottom: 4 }}>待办</div>
+              <ul className="dd-list">{digest.action_items.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </div>
+          )}
+          {digest.key_facts?.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div className="faint" style={{ fontSize: 10.5, marginBottom: 4 }}>关键事实</div>
+              <ul className="dd-list">{digest.key_facts.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="dd-card">
         <div className="dd-sec-title">标签</div>

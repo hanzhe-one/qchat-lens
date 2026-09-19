@@ -15,6 +15,7 @@ export default function DashView({ session, onExplore, onGoto }) {
   const [tags, setTags] = useState([])
   const [topics, setTopics] = useState([])
   const [recent, setRecent] = useState([])
+  const [digests, setDigests] = useState([])
   const [live, setLive] = useState(null)
   const [busy, setBusy] = useState(false)
   const [byKind, setByKind] = useState(null)
@@ -37,6 +38,10 @@ export default function DashView({ session, onExplore, onGoto }) {
     try {
       const m = await get(`/api/sessions/${session.id}/messages?after=0&limit=8`)
       setRecent(m.messages)
+    } catch (e) {}
+    try {
+      const d = await get(`/api/sessions/${session.id}/digests?limit=6`)
+      setDigests(d.digests || [])
     } catch (e) {}
   }
 
@@ -182,6 +187,48 @@ export default function DashView({ session, onExplore, onGoto }) {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+
+        <div className="dash-row">
+          <div className="dash-card glass-card full">
+            <div className="dc-head"><h3>最近摘要</h3>
+              <div className="dc-extra"><span className="pill pill-grey">AI 对每批消息的归纳</span></div>
+            </div>
+            {digests.length === 0 ? (
+              <div className="muted" style={{ padding: 8 }}>尚无摘要。点「分析 / 重建专题」后，AI 会为每批消息生成摘要、待办与关键事实。</div>
+            ) : (
+              <div className="digest-list">
+                {digests.map((d) => (
+                  <div key={d.id} className="digest-item">
+                    {d.digest && <div className="di-text">{d.digest}</div>}
+                    {(d.action_items?.length > 0 || d.key_facts?.length > 0) && (
+                      <div className="di-cols">
+                        {d.action_items?.length > 0 && (
+                          <div className="di-col">
+                            <span className="di-label">待办</span>
+                            <ul className="dd-list">{d.action_items.slice(0, 4).map((x, i) => <li key={i}>{x}</li>)}</ul>
+                          </div>
+                        )}
+                        {d.key_facts?.length > 0 && (
+                          <div className="di-col">
+                            <span className="di-label">关键事实</span>
+                            <ul className="dd-list">{d.key_facts.slice(0, 4).map((x, i) => <li key={i}>{x}</li>)}</ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {d.tags?.length > 0 && (
+                      <div className="di-tags">
+                        {d.tags.slice(0, 6).map((t) => (
+                          <button key={t} className="mtag mtag-btn" onClick={() => goTag(t)}>{t}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

@@ -180,7 +180,15 @@ def message_detail(msg_id: int):
     m = db.get_message(msg_id)
     if not m:
         raise HTTPException(404, "消息不存在")
-    return {"ok": True, "message": m}
+    # 附带该消息所属批次的摘要/待办/关键事实（未分析则为 None）
+    return {"ok": True, "message": m, "digest": db.digest_for_message(msg_id)}
+
+
+@app.get("/api/sessions/{session_id}/digests")
+def session_digests(session_id: str, limit: int = Query(200, le=1000)):
+    if not db.get_session(session_id):
+        raise HTTPException(404, "会话不存在")
+    return {"ok": True, "digests": db.list_message_digests(session_id, limit=limit)}
 
 
 # ---------- Agent 收集箱 ----------
