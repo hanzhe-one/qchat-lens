@@ -199,6 +199,7 @@ class InboxStatusReq(BaseModel):
 class InboxScanReq(BaseModel):
     session_id: str = ""
     limit: int = 10000
+    reclassify: bool = False   # True=对全部链接重跑 LLM（AI 重新识别）
 
 
 class InboxAcceptReq(BaseModel):
@@ -225,7 +226,8 @@ def list_inbox(status: str = "active", limit: int = Query(500, le=2000)):
 @app.post("/api/inbox/scan")
 def scan_inbox(req: InboxScanReq):
     result = inbox_mod.scan_inbox(db, session_id=req.session_id or None, limit=req.limit,
-                                  inbox_cfg=CONFIG.get("inbox"))
+                                  inbox_cfg=CONFIG.get("inbox"),
+                                  llm_cfg=CONFIG.get("llm"), reclassify=req.reclassify)
     return {"ok": True, "result": result}
 
 

@@ -721,6 +721,10 @@ class DB:
                 (status, now, candidate_id))
             return cur.rowcount > 0
 
+    def existing_candidate_urls(self):
+        """已在收集箱里的链接 url 集合，用于扫描时跳过、避免重复调用 LLM。"""
+        return {r["url"] for r in self._q("SELECT url FROM agent_candidates")}
+
     def accept_agent_candidate(self, candidate_id):
         now = int(time.time() * 1000)
         with self.conn() as c:

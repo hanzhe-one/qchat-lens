@@ -39,6 +39,27 @@ TOPIC_SYSTEM = """你是聊天记录分析器。输入若干消息(JSON数组，
 
 要求：2~6 个专题；start_id/end_id 必须是输入里真实出现的 id，区间覆盖连续消息；只输出 JSON。"""
 
+INBOX_SYSTEM = """你是链接整理助手。输入是一批从聊天记录里提取的链接，每条含 url 和它所在消息的上下文文本。
+请结合上下文，为每条链接判断分类、写一句真实摘要、给标签和把握度。输出 JSON（不要任何多余文字）：
+
+{"items":[{"url":"原样回填的url","title":"简短标题","category":"分类名","summary":"一句话说明这是什么、聊天里为何提到","tags":["1~4个标签"],"confidence":0到100的整数}]}
+
+规则：
+- category 优先从下方「候选分类」里选最贴切的；都不合适再自拟一个简短分类，实在无法判断用"其他链接"
+- summary 要具体、基于上下文，别只复述 url 或域名
+- confidence 反映你对该分类的把握（信息足→高，纯裸链无上下文→低）
+- url 必须逐字原样返回，用于回填，不要改写或补全
+- 只输出 JSON
+"""
+
+
+def build_inbox_payload(links, categories):
+    """links: [{'url','context'}]；categories: 候选分类名列表。拼成用户消息。"""
+    head = "候选分类：" + ("、".join(categories) if categories else "（无，请自拟）")
+    body = "\n".join(json.dumps({"url": l["url"], "context": (l.get("context") or "")[:300]},
+                                ensure_ascii=False) for l in links)
+    return head + "\n\n链接：\n" + body
+
 
 def _api_url(base_url):
     base = (base_url or "").rstrip("/")
