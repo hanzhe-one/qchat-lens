@@ -56,6 +56,17 @@ class Analyzer:
             for r in rows:
                 self.db.set_message_tags(r["id"], tags, source="auto")
                 self.db.upsert_message_analyzed(r["id"], 1)
+            # 保存这批的摘要/待办/关键事实——LLM 已经算出来，不再丢弃。
+            # 先清掉与本区间重叠的旧摘要，避免重新分析时堆叠。
+            self.db.delete_digests_in_range(session_id, lo, hi)
+            self.db.add_message_digest({
+                "session_id": session_id,
+                "msg_lo": lo, "msg_hi": hi,
+                "digest": (out.get("digest") or "")[:2000],
+                "action_items": [str(x)[:300] for x in (out.get("action_items") or [])][:20],
+                "key_facts": [str(x)[:300] for x in (out.get("key_facts") or [])][:20],
+                "tags": tags,
+            })
             self.db.log_analysis("session", session_id, lo, hi, len(rows), "ok")
         return len(rows)
 

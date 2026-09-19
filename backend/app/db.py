@@ -80,6 +80,19 @@ CREATE TABLE IF NOT EXISTS analysis_log (
     created_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS message_digests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   TEXT NOT NULL,
+    msg_lo       INTEGER NOT NULL,        -- 本批最早消息 id
+    msg_hi       INTEGER NOT NULL,        -- 本批最晚消息 id
+    digest       TEXT NOT NULL DEFAULT '',      -- 该批摘要
+    action_items TEXT NOT NULL DEFAULT '[]',    -- 待办数组(JSON)
+    key_facts    TEXT NOT NULL DEFAULT '[]',    -- 关键事实数组(JSON)
+    tags         TEXT NOT NULL DEFAULT '[]',    -- 该批标签(JSON，便于回看)
+    created_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_digest_session ON message_digests(session_id, msg_lo);
+
 CREATE TABLE IF NOT EXISTS resources (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -470,6 +483,55 @@ class DB:
                 " VALUES(?,?,?,?,?,?,?,?,?)",
                 (scope, ref_id, msg_lo, msg_hi, count, "digest", status,
                  (detail or "")[:4000], int(time.time() * 1000)))
+
+    # ---------- 批次摘要 ----------
+    def add_message_digest(self, rec):
+        """记录一批消息的摘要/待办/关键事实。返回新行 id。"""
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO message_digests(session_id,msg_lo,msg_hi,digest,"
+                " action_items,key_facts,tags,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                (rec["session_id"], rec["msg_lo"], rec["msg_hi"],
+                 rec.get("digest", ""),
+                 json.dumps(rec.get("action_items", []), ensure_ascii=False),
+                 json.dumps(rec.get("key_facts", []), ensure_ascii=False),
+                 json.dumps(rec.get("tags", []), ensure_ascii=False),
+                 int(time.time() * 1000)))
+            return cur.lastrowid
+
+    def delete_digests_in_range(self, session_id, msg_lo, msg_hi):
+        """删除与 [msg_lo, msg_hi] 重叠的批次摘要，供重新分析时先清后写。"""
+        with self.conn() as c:
+            return c.execute(
+                "DELETE FROM message_digests WHERE session_id=?"
+                " AND msg_lo<=? AND msg_hi>=?",
+                (session_id, msg_hi, msg_lo)).rowcount
+
+    def list_message_digests(self, session_id, limit=200):
+        rows = self._q(
+            "SELECT * FROM message_digests WHERE session_id=?"
+            " ORDER BY msg_lo DESC LIMIT ?", (session_id, limit))
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["action_items"] = json.loads(d["action_items"])
+            d["key_facts"] = json.loads(d["key_facts"])
+            d["tags"] = json.loads(d["tags"])
+            out.append(d)
+        return out
+
+    def digest_for_message(self, msg_id):
+        """取覆盖该消息的批次摘要（最新一条）。"""
+        rows = self._q(
+            "SELECT * FROM message_digests WHERE msg_lo<=? AND msg_hi>=?"
+            " ORDER BY created_at DESC LIMIT 1", (msg_id, msg_id))
+        if not rows:
+            return None
+        d = dict(rows[0])
+        d["action_items"] = json.loads(d["action_items"])
+        d["key_facts"] = json.loads(d["key_facts"])
+        d["tags"] = json.loads(d["tags"])
+        return d
 
     # ---------- 活动统计 ----------
     def daily_activity(self, session_id=None, days=365):
