@@ -1,174 +1,71 @@
-# QChat Lens · 14 天改造路线图
+# QChat Lens · 改造路线图
 
-> 起点：2026-09-18（周五） ｜ 节奏：每天 30 分钟 ｜ 预计终点：2026-10-01
-> 原则：每步**独立验收、独立提交**；当天做不完只交「最小可验收」部分，余量顺延到次日，不合并。
+> 节奏：每次约 30 分钟，一步一提交、独立验收。按序号推进，不绑日历。
+> 最近重规划：2026-09-19。
 
-## 基线说明（2026-09-18 更新）
+## 总目标
 
-本路线图最初基于 09-06 的本地代码制定。执行 Day 1 时发现：**本地 clone 落后远端 6 个提交**，
-另有 09-11 ~ 09-17 的开发（作者 Xiao Zhe）加入了「Agent 收集箱 + 全部知识」两大功能：
-
-- 新增表 `agent_candidates` / `knowledge_items` / `knowledge_sources`
-- 新增 `backend/app/inbox.py`、前端 `InboxView.jsx` / `KnowledgeView.jsx`
-- 新增约 15 个 API（`/api/inbox/*`、`/api/knowledge/*`）
-
-Day 1 的修复已 rebase 到最新代码之上并重新验证。**Day 2 起的目标需要对照新代码重新确认**
-（原计划中的「知识沉淀」缺口可能已被 knowledge_items 部分覆盖，见 Day 2 备注）。
-
-## 一、总目标
-
-把代码 review 发现的问题按 **P0 → P3** 逐日修掉，让项目核心（**原文不可变 + AI 结果可重建**）真正自洽：
-
-- **P0 止血**：堵住密钥泄露；专题不再重复堆叠；把 LLM 已经算出来但被丢弃的摘要/待办/事实存下来。
-- **P1 质量**：标签从「批次级」修正到宣传的「消息级」；消灭 N+1 查询；上 FTS5 全文检索。
-- **P2 工程**：本地鉴权、依赖补齐、幂等测试、DB 迁移。
-- **P3 收尾**：清理死代码、对齐 README。
-
-## 二、每天这 30 分钟怎么花
-
-| 阶段 | 时长 | 谁做 |
-|---|---|---|
-| 改代码 | ~20 min | 我 |
-| 跑验收 / 点 UI | ~5 min | 你 |
-| commit | ~5 min | 你 |
-
-**当天收尾条件**：验收命令通过 + 一次 commit。没 commit 不算完成。
-
-## 三、进度总览
-
-| Day | 日期 | 主题 | 优先级 | 状态 |
-|---|---|---|---|---|
-| 1 | 09-18 五 | 换密钥 + 专题先清后建 | P0 | ✅ 代码完成（密钥待你轮换） |
-| 2 | 09-19 六 | 摘要/待办/事实落库（schema + 写入） | P0 | ✅ 完成 |
-| 3 | 09-20 日 | 摘要展示（API + 前端） | P0 | ✅ 完成（09-19 提前做） |
-| 4 | 09-21 一 | 标签消息级化（prompt + 写回） | P1 | ✅ 完成（09-19 提前做） |
-| 5 | 09-22 二 | 标签消息级化（前端 + 旧数据兼容） | P1 | ✅ 完成（09-19 提前做） |
-| 6 | 09-23 三 | 消灭 N+1 查询 | P1 | ✅ 完成（09-19 提前做） |
-| 7 | 09-24 四 | FTS5 全文检索（建索引） | P1 | ☐ |
-| 8 | 09-25 五 | FTS5 接入搜索 | P1 | ☐ |
-| 9 | 09-26 六 | 鉴权 + CORS + 路径校验 | P2 | ☐ |
-| 10 | 09-27 日 | 补依赖 + 测试脚手架 | P2 | ☐ |
-| 11 | 09-28 一 | 幂等回归测试 | P2 | ☐ |
-| 12 | 09-29 二 | DB 迁移机制 | P2 | ☐ |
-| 13 | 09-30 三 | lifespan + 清死代码 | P3 | ☐ |
-| 14 | 10-01 四 | README 对齐 + 全量回归 | P3 | ☐ |
+让项目核心（**原文不可变 + AI 结果可重建**）自洽，并把「Agent 收集箱 / 知识库」
+从半成品做成名副其实：真用上 LLM、隐私边界清晰、检索够快、对外安全。
 
 ---
 
-## 四、每日详情
+## 已完成（截至 2026-09-19，均已推送）
 
-### Day 1 · 09-18（周五）— 止血：密钥安全 + 专题不再堆叠
+**核心改造**
+1. 专题「先清后建」——重建不再重复堆叠；LLM 整体失败时保留旧专题。
+2. 批次摘要/待办/关键事实落库（`message_digests`）——不再算完即丢。
+3. 摘要展示——消息详情「本段摘要」卡片 + 概览「最近摘要」+ 两个 API。
+4. 标签消息级化——prompt 逐条打标，改掉「整批共用一组标签」。
+5. 「重新分析」入口——清零后用新 prompt 重建旧数据（保留人工标签）。
+6. 消灭 N+1——消息列表标签/资源批量取，查询次数与条数无关。
 
-**① 吊销并更换 API Key（你手动，约 5 分钟）**
-- 背景：`backend/config.json` 里的 MiniMax key 已明文暴露。
-- 操作：MiniMax 控制台 → 删除旧 key → 新建 → 填进界面「配置 / 导入 → LLM」→ 保存。
-- 验收：点「测试连接」返回 `✓ 连接成功`。
+**收集箱 / 知识库**
+7. 分类改为配置驱动——移除硬编码的个人分类（隐私），`inbox.categories` 自定义。
+8. 全库扫描只扫未隐藏会话——群聊链接不再漏进收集箱。
+9. **收集箱升级为真 LLM Agent**——分类/摘要/标签/置信度来自模型；无 key 或失败
+   时回退关键词；默认只扫新链接省 token，`reclassify` 可全量重跑。（后端已完成）
 
-**② `build_topics` 先清后建（我改）**
-- `backend/app/db.py`：新增 `delete_topics(session_id, only_open=True)`（保留人工 `archived`）。
-- `backend/app/analyzer.py`：`build_topics()` 开始前先调用清理。
-- 验收：同一会话连点两次「分析 / 重建专题」，`topics` 数量**不翻倍**。
-  ```bash
-  # 分析前后各查一次，数字应稳定
-  python -c "import sqlite3;c=sqlite3.connect('data/qchat.db');print(c.execute('select count(*) from topics').fetchone())"
-  ```
+**Bug 修复（重审发现）**
+10. 编辑知识条目不再清空状态（写库用校验后的 status，非原始 req）。
+11. 开启 `PRAGMA foreign_keys`——此前每连接没开，所有 CASCADE 都是空摆设。
 
-### Day 2 · 09-19（周六）— 摘要 / 待办 / 关键事实落库（1/2）
-
-> **先做核对**：远端新增的 `knowledge_items` 只覆盖「链接型知识」（url/title/summary），
-> 与本节要存的「消息批次摘要」不是一回事 —— 摘要仍无处存放，本日任务依然成立。
-> 但落库前先确认是否应挂到现有的 agent/knowledge 体系上，避免又造一张平行的表。
-
-- 现状：`llm.py` 让模型输出 `digest / action_items / key_facts`，但 `analyze_window` **只写了 tags，其余全丢**。
-- `db.py`：新增 `message_digests` 表（`session_id, msg_lo, msg_hi, digest, action_items JSON, key_facts JSON, created_at`）。
-- `analyzer.py`：把整批的 digest / 待办 / 事实写入。
-- 验收：分析后 DB 里能查到这批摘要。
-  ```bash
-  python -c "import sqlite3;c=sqlite3.connect('data/qchat.db');print(c.execute('select count(*) from message_digests').fetchone())"
-  ```
-
-### Day 3 · 09-20（周日）— 摘要展示（2/2）
-
-- `main.py`：`/api/messages/{id}` 附带所属批次的 digest；新增 `/api/sessions/{id}/digests`。
-- 前端：消息详情抽屉显示「本段摘要 / 待办 / 关键事实」；概览页显示最近摘要。
-- 验收：UI 点开一条已分析消息，能看到摘要与待办。
-
-### Day 4 · 09-21（周一）— 标签消息级化（1/2）
-
-- 现状：一批 80 条共享同一组标签，与「为**消息**打标签」的宣传不符。
-- `llm.py`：改 `DIGEST_SYSTEM`，输出结构改为逐条：
-  `{"items":[{"id":123,"tags":["..."]}, ...],"digest":"...","action_items":[],"key_facts":[]}`
-- `analyzer.py`：`analyze_window` 按 `id` 逐条写回（校验 id 属于本批）。
-- 验收：一批消息里不同消息的标签**不再完全相同**。
-
-### Day 5 · 09-22（周二）— 标签消息级化（2/2）
-
-> **Day 4 提前确认**：前端标签云与消息标签本就按每条消息的 `tags` 渲染，消息级
-> 标签自动生效，无需改前端。旧批次级数据保留不迁移（`analysis_log` 可追溯）。
-> 故 Day 5 的实际剩余工作聚焦「重新分析」入口。
-
-- 加一个「重新分析」入口（把该会话 `analyzed` 清零后重跑），便于用新的消息级
-  prompt 重建旧数据；重跑时摘要/专题已是先清后写，不会堆叠。
-- 验收：点「重新分析」后，旧会话的标签由整批一致变为逐条不同。
-
-### Day 6 · 09-23（周三）— 消灭 N+1 查询
-
-- `db.py::list_messages`：把逐条 `message_tags` / `message_resources` 改成**一次 JOIN 批量取**。
-- 验收：万条级会话打开消息页，加载时间明显下降（前后各记一次时间）。
-
-### Day 7 · 09-24（周四）— FTS5 全文检索（1/2）
-
-> **可行性已探（09-19）**：本机 SQLite 3.45.3，FTS5 可用、trigram 分词器可用。
-> 注意 trigram 要求查询词 **≥3 字符**，2 字中文词（如「分词」）用 MATCH 命中不到 —— 
-> 因此 Day 8 的 `LIKE` 回退是必需的，短词一律走 LIKE。
-
-- `db.py`：建 `messages_fts`（FTS5，中文用 `tokenize='trigram'`）；导入/写入时同步。
-- 附一次性 `rebuild` 脚本。
-- 验收：`SELECT ... MATCH` 能命中 ≥3 字中文关键词。
-
-### Day 8 · 09-25（周五）— FTS5 接入搜索（2/2）
-
-- `db.py::_base_where` 的 `q` 分支改用 FTS（带 `LIKE` 回退）；`main.py` 搜索参数不变。
-- 验收：界面搜索走 FTS，结果正确且更快。
-
-### Day 9 · 09-26（周六）— 鉴权 + CORS + 路径校验
-
-- `main.py`：CORS 收紧到本机来源；加本地 token（首次生成写 config，前端带上）。
-- `/api/resource`：`startswith` 改 `fp.is_relative_to(root.resolve())`。
-- 验收：无 token 的请求被拒；带 token 正常；`../` 越权被拒。
-
-### Day 10 · 09-27（周日）— 补依赖 + 测试脚手架
-
-- `requirements.txt` 补 `pywebview / pythonnet / clr_loader`（或用 extras 分组）。
-- 建 `backend/tests/`，pytest + 临时 DB fixture。
-- 验收：`pytest` 能跑起来（哪怕只有 1 个 smoke）。
-
-### Day 11 · 09-28（周一）— 幂等回归测试
-
-- 用例：重复导入同一文件 `added` 不增；`analyze_window` 重复调用不重复消费；`build_topics` 连跑两次不翻倍。
-- 验收：`pytest -q` 全绿。
-
-### Day 12 · 09-29（周二）— DB 迁移机制
-
-- `db.py`：加 `schema_version` 表 + 顺序迁移函数，替换散落的 `ALTER TABLE`。
-- 验收：老库能自动升级，新库直接建到最新。
-
-### Day 13 · 09-30（周三）— lifespan + 清死代码
-
-- `@app.on_event("startup")` → `lifespan`；删 `analysis_lock`、未用的 `MERGE_SYSTEM`、`probe_res.py`、`assets/vite.svg`。
-- 验收：服务正常启动，无未用告警。
-
-### Day 14 · 10-01（周四）— README 对齐 + 全量回归
-
-- README 与实际能力逐条核对（含新增的摘要功能）；补一句「实时监听默认只入库、不自动分析」的现状说明。
-- 全量回归：导入 → 分析 → 专题 → 搜索 → 图库。
-- 验收：走完一遍无报错；README 与代码一致。
+**隐私 / 安全事件（已处理）**
+- 清除 6 个旧提交里泄露的个人 QQ 邮箱（filter-repo 改写历史 + 强推）。
+- 去掉仓库里的 AI 署名痕迹。
+- 修正本机全局 git 身份（曾是个人 QQ 邮箱，是泄露根因）。
+- 删除误入本地库的 10 个群聊（233 条），只保留「宇称」会话。
 
 ---
 
-## 五、约定
+## 待办（按建议顺序）
 
-- **commit 格式**：`fix: ...` / `feat: ...` / `chore: ...`，一天一条，信息里写明验收结果。
-- **顺延规则**：某天 30 分钟做不完 → 当天只交最小可验收部分，剩余拆到次日开头，**不跨天合并两个大改动**。
-- **假期**：09-30 ~ 10-01 逢国庆，若不方便可整体顺延，节奏不变。
-- **每日启动语**（你每天来说这一句即可）：`开始第 N 天`。
+| # | 主题 | 优先级 | 说明 |
+|---|---|---|---|
+| A | **真 Agent 前端 + 文案**（紧接上一步）| P1 | 加「AI 重新识别」按钮走 `reclassify`；界面区分「AI 分类 / 关键词兜底」，去掉遗留的误导文案；跑一次真分类看效果 |
+| B | `_parse_ts` 时区修正 | P1 | 正确性 bug；**赶在你下次大批导入前做**，否则导入时间会整体偏移 |
+| C | FTS5 建索引 | P1 | `messages_fts`（trigram），导入/写入同步；附 rebuild 脚本 |
+| D | FTS5 接入搜索 | P1 | `q` 走 FTS，**短词(<3字)回退 LIKE**（trigram 限制） |
+| E | 鉴权 + CORS 收紧 + 路径校验 | P2 | 本地 token；`/api/resource` 用 `is_relative_to`；隐私敏感、提前做 |
+| F | 补依赖 + 测试脚手架 | P2 | `requirements` 补 pywebview 等；建 pytest + 临时库 fixture |
+| G | 幂等回归测试 | P2 | 重复导入不增、重复分析不重复消费、重建不翻倍 |
+| H | DB 迁移机制 | P2 | `schema_version` + 顺序迁移，替换散落 ALTER |
+| I | lifespan + 清死代码 | P3 | `on_event`→lifespan；删 `MERGE_SYSTEM`/`analysis_lock`/`probe_res.py`；`msg_type` 实时通道恒 text 一并处理 |
+| J | README 对齐 + 全量回归 | P3 | 文档与实际能力核对；导入→分析→专题→搜索→图库 走一遍 |
+
+**项目外（另行跟踪，非本仓库）**：git 身份泄露 QQ 邮箱的还有 my-blog（全部）、
+hf-agents-course-notes（全部）、AwesomeMinis（11 条，有协作者需谨慎）。
+
+---
+
+## 待你处理（我代劳不了）
+
+- **填新 LLM key**：已填 stepfun/step-3.7-flash 并测试通过。要看消息级标签/摘要，
+  进「宇称」会话点「分析 / 重建专题」跑一次真分析。
+- **旧提交邮箱彻底清除**（可选）：删库重建（stars/forks 全 0，无损失）或提 GitHub 工单。
+
+## 约定
+
+- commit 用 `feat:/fix:/chore:`，写明验收结果；**不加任何 AI 署名**。
+- 一步一提交，做不完只交最小可验收部分，不跨步合并大改动。
+- 每次开工说一句：`继续下一步` 或 `做第 X 步`。
