@@ -45,13 +45,18 @@ export default function InboxView({ onOpenSource, onCountChange }) {
     }
   }, [onCountChange])
 
-  const scan = useCallback(async (silent = false) => {
+  const scan = useCallback(async (silent = false, reclassify = false) => {
     setScanning(true)
     setError('')
     try {
-      await post('/api/inbox/scan', {})
+      const d = await post('/api/inbox/scan', { reclassify })
       await load()
-      if (!silent) setNotice('扫描完成，已更新收集箱')
+      if (!silent) {
+        const n = d?.result?.llm_classified || 0
+        setNotice(reclassify
+          ? `AI 重新识别完成，${n} 条由模型分类`
+          : (n > 0 ? `扫描完成，${n} 条新链接由 AI 分类` : '扫描完成，已更新收集箱'))
+      }
     } catch (e) {
       setError(e.message || '扫描失败')
     } finally {
@@ -123,9 +128,9 @@ export default function InboxView({ onOpenSource, onCountChange }) {
     <section className="inbox-view">
       <header className="inbox-head">
         <div>
-          <div className="home-eyebrow">Agent 收集箱</div>
+          <div className="home-eyebrow">收集箱</div>
           <h1>先替你收好，等有空再整理</h1>
-          <p>Agent 会从聊天里的链接和上下文中识别候选信息，确认后进入正式知识库。</p>
+          <p>从聊天里提取链接并归类：配置了 LLM 时由 AI 结合上下文分类，否则按关键词兜底。确认后进入正式知识库。</p>
         </div>
         <div className="inbox-head-count">
           <b>{items.length}</b>
@@ -144,8 +149,13 @@ export default function InboxView({ onOpenSource, onCountChange }) {
             <span>⌕</span>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、域名或标签" />
           </label>
-          <button className="btn-ghost btn-sm" onClick={() => scan()} disabled={scanning}>
-            {scanning ? '扫描中…' : '扫描聊天记录'}
+          <button className="btn-ghost btn-sm" onClick={() => scan(false, false)} disabled={scanning}
+                  title="只扫聊天里的新链接（已在收集箱的跳过）">
+            {scanning ? '处理中…' : '扫描新链接'}
+          </button>
+          <button className="btn-ghost btn-sm" onClick={() => scan(false, true)} disabled={scanning}
+                  title="让 AI 结合上下文对全部链接重新分类（需已配置 LLM）">
+            AI 重新识别
           </button>
         </div>
       </div>
@@ -167,11 +177,11 @@ export default function InboxView({ onOpenSource, onCountChange }) {
 
       <div className={`inbox-workspace ${selected ? 'has-detail' : ''}`}>
         <div className="inbox-list">
-          {loading && <div className="inbox-empty glass-card"><b>正在加载收集箱…</b><span>Agent 正在读取候选信息。</span></div>}
+          {loading && <div className="inbox-empty glass-card"><b>正在加载收集箱…</b><span>正在读取候选信息。</span></div>}
           {!loading && visibleItems.length === 0 && (
             <div className="inbox-empty glass-card">
               <b>{items.length ? '没有符合条件的信息' : '收集箱已经清空'}</b>
-              <span>{items.length ? '换个筛选条件或搜索词试试。' : '点击右上角「扫描聊天记录」，Agent 会从消息里识别链接。'}</span>
+              <span>{items.length ? '换个筛选条件或搜索词试试。' : '点击右上角「扫描新链接」，从消息里提取链接并归类。'}</span>
             </div>
           )}
           {!loading && visibleItems.map((item) => (
